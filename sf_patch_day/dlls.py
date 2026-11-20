@@ -10,6 +10,7 @@ the game version, and the Address Library file for that version.
 import mmap
 import os
 import re
+import struct
 import zipfile
 import zlib
 
@@ -70,7 +71,8 @@ def collect(inputs):
                     if base.lower().endswith(".dll") and not info.is_dir():
                         items.append(Item(f"{label_base} :: {info.filename}", zpath, info.filename))
             log.info("collect", f"read zip {zpath}")
-        except (zipfile.BadZipFile, OSError) as e:
+        except (zipfile.BadZipFile, OSError, ValueError, struct.error, KeyError, RuntimeError, NotImplementedError,
+                EOFError, zlib.error) as e:  # a zip whose table zipfile can't make sense of
             problems.append((zpath, f"not a readable zip ({e})"))
 
     for path in inputs:
@@ -263,8 +265,8 @@ def run(inputs, target, game, game_pass=False, al_dirs=()):
     worst = max([EXIT_FOR[r["verdict"]] for r in results] + [0])
     if base["sfse_found"] is False:
         worst = max(worst, 1)
-    if game_pass and results:
-        worst = max(worst, 2)  # SFSE doesn't run on Game Pass, so no plugin loads there
+    if game_pass and any(r["verdict"] not in (NOT_SFSE, UNREADABLE) for r in results):
+        worst = max(worst, 2)  # SFSE doesn't run on Game Pass, so no SFSE plugin loads there
     if problems:
         worst = 3
     counts = {}
@@ -320,6 +322,7 @@ def text_report(rep, how_version):
     word = {0: "everything checked loads", 1: "some plugins wait for an update or need testing",
             2: "some plugins are locked to other game versions", 3: "some files couldn't be read"}[rep["exit"]]
     if rep["game_pass"] and rep["exit"] == 2:
-        word = "SFSE plugins don't load on the Game Pass version"
+        word = "SFSE plugins don't load on the Game Pass version" + (
+            ", and some are locked to other game versions too" if c.get(LOCKED) else "")
     lines.append(f"RESULT: {word} ({summary})")
     return lines

@@ -247,7 +247,11 @@ class TestDllsCommand(Temp):
         os.remove(os.path.join(game, "Data", "SFSE", "Plugins", "Broken.dll"))
         code, out = run("dlls", "--game", game)
         self.assertEqual(code, 2)
-        self.assertIn("don't load on the Game Pass version", out)
+        self.assertIn("don't load on the Game Pass version, and some are locked", out)
+        only_helpers = self.p("helpers")
+        write(os.path.join(only_helpers, "Helper.dll"), mk.pe_file())
+        # No SFSE plugin checked, so Game Pass alone isn't exit 2 (it's 1 because this game has no SFSE file).
+        self.assertEqual(run("dlls", only_helpers, "--game", game)[0], 1)
         self.assertEqual(run("dlls", "--game", self.p("nowhere"))[0], 3)
         self.assertEqual(run("dlls", self.p("x.zip"), "--game-version", "soon")[0], 3)
         self.assertEqual(run("dlls", self.p("missing.dll"), "--game-version", "1.16.300")[0], 3)
@@ -386,7 +390,9 @@ class TestDrift(Temp):
     def test_stage_never_there_is_a_note(self):
         with open(self.mods, "w", encoding="utf-8") as f:
             json.dump({"masters": {"TestMaster.esm": {"records": [{"edid": "TM_Quest", "stages": [10, 99]}]}}}, f)
-        self.snap()
+        code, out = run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data)
+        self.assertEqual(code, 0, out)
+        self.assertIn("not found (check the name): TM_Quest stage 99", out)  # said at snapshot time, too
         write(self.p("Data", "TestMaster.esm"), master_esm(glob_value=2.0))
         code, out = self.check()
         self.assertEqual(code, 1, out)
@@ -414,13 +420,25 @@ class TestDrift(Temp):
                              "--force")[0], 0)
 
     def test_damaged_record(self):
-        write(self.p("Data", "TestMaster.esm"), mk.plugin(0x1, ["Starfield.esm"], [mk.group("CNDF", [
-            mk.record("CNDF", 0x01000801, [mk.edid("TM_Start"), mk.sub("XXXX", b"\x01\x00")])])]))
-        code, out = run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data)
-        self.assertEqual(code, 3, out)
-        self.assertIn("TM_Start", out)
-        self.assertIn("damaged XXXX", out)
-        self.assertNotIn("unexpected error", out)
+        for size_field in (b"\x01\x00", b"\x01\x00\x00\x00\x00\x00"):  # too short and too long
+            write(self.p("Data", "TestMaster.esm"), mk.plugin(0x1, ["Starfield.esm"], [mk.group("CNDF", [
+                mk.record("CNDF", 0x01000801, [mk.edid("TM_Start"), mk.sub("XXXX", size_field)])])]))
+            code, out = run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data)
+            self.assertEqual(code, 3, out)
+            self.assertIn("TM_Start", out)
+            self.assertIn("damaged XXXX", out)
+            self.assertNotIn("unexpected error", out)
+
+    def test_name_case_fixed_after_snapshot(self):
+        with open(self.mods, "w", encoding="utf-8") as f:
+            json.dump({"masters": {"testmaster.esm": {"records": [{"edid": "tm_start", "copied": True}]}}}, f)
+        self.snap()
+        with open(self.mods, "w", encoding="utf-8") as f:
+            json.dump({"masters": {"TestMaster.esm": {"records": [{"edid": "TM_Start", "copied": True}]}}}, f)
+        write(self.p("Data", "TestMaster.esm"), master_esm(conditions=(1, 3)))
+        code, out = self.check()
+        self.assertEqual(code, 2, out)  # the change is still found under the corrected spelling
+        self.assertIn("TM_Start: CHANGED", out)
 
     def test_skip_without_pex_tools(self):
         mods = drift.load_mods(self.mods)

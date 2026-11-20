@@ -16,7 +16,7 @@ import os
 import struct
 
 from . import VERSION, log
-from .plugin import Plugin, PluginError, find_plugin, subrecords
+from .plugin import Plugin, PluginError, PluginReadError, find_plugin, subrecords
 
 
 class DriftError(Exception):
@@ -180,8 +180,11 @@ def take(mods, dirs, tools=None, tools_msg=""):
                         entry["records"][r["edid"]] = record_facts(*hit, plugin) if hit else None
                     except PluginError as e:
                         raise PluginError(f"{path}: {r['edid']}: {e}")
+        except PluginReadError as e:
+            raise DriftError(f"{e}. Fix: close the game and the Creation Kit, and check you can read the file.")
         except PluginError as e:
-            raise DriftError(f"{e}. Fix: if the file is damaged, verify the game files in Steam or reinstall the mod.")
+            raise DriftError(f"{e}. Fix: the file is damaged; verify the game files in Steam or reinstall the mod "
+                             f"it comes from.")
         except OSError as e:
             raise DriftError(f"{path}: {e.strerror or e}. Fix: close the game and the Creation Kit, and check you can "
                              f"read the file.")
@@ -207,19 +210,53 @@ def take(mods, dirs, tools=None, tools_msg=""):
 
 # ---- comparing ---------------------------------------------------------------------------------------------------
 ACTION, NOTE, SKIP, OK = "ACTION", "NOTE", "SKIP", "OK"
+RESNAPSHOT = "after you next rebuild your mod, take a new baseline with snapshot --force"
+
+
+def _key(name):
+    """How the game matches names: case ignored, either slash."""
+    return name.replace("\\", "/").lower()
+
+
+def _by_key(d):
+    return {_key(k): v for k, v in (d or {}).items()}
+
+
+def not_found(spec, entry):
+    """Names in the mods file that the snapshot didn't find: likely typos, worth fixing before an update."""
+    out = []
+    for r in spec.get("records", []):
+        facts = entry["records"].get(r["edid"])
+        if facts is None:
+            out.append(f"record {r['edid']}")
+            continue
+        for s in r.get("stages", []):
+            if s not in facts.get("stages", []):
+                out.append(f"{r['edid']} stage {s}" + ("" if facts["type"] == "QUST" else " (only quests have stages)"))
+    for script, names in (spec.get("functions") or {}).items():
+        got = (entry.get("functions") or {}).get(script)
+        if entry.get("functions") is None:
+            break  # skipped: said already
+        if got is None:
+            out.append(f"script {script}")
+            continue
+        out += [f"{script} function {n}()" for n in names if n not in got]
+    return out
 
 
 def compare(base, now, mods):
     """[(level, text)]. ACTION = something the mod uses changed (rebuild); NOTE = changed, not used; SKIP = a check
-    that couldn't run; OK = unchanged."""
+    that couldn't run; OK = unchanged. Names are matched without regard to case, as the game does, so fixing a
+    name's case in the mods file after the snapshot doesn't hide a check."""
     lines = []
-    bm = base.get("masters", {})
+    bm = _by_key(base.get("masters", {}))
     for name, spec in mods["masters"].items():
         users = ", ".join(spec.get("used_by", [])) or mods.get("mod") or "your mod"
-        b, n = bm.get(name), now["masters"][name]
+        b, n = bm.get(_key(name)), now["masters"][name]
         if b is None:
-            lines.append((NOTE, f"{name}: not in the baseline (run snapshot)"))
+            lines.append((NOTE, f"{name}: not in the baseline (added to the mods file after the snapshot; {RESNAPSHOT})"))
             continue
+        base_records = _by_key(b.get("records"))
         if n.get("functions_skipped"):
             lines.append((SKIP, f"{name}: function checks skipped: {n['functions_skipped']}"))
         same = b["sha256"] == n["sha256"]
@@ -231,7 +268,7 @@ def compare(base, now, mods):
         # Scripts live in the archive, which can change while the plugin doesn't: functions are always compared.
         for rule in ([] if same else spec.get("records", [])):
             edid = rule["edid"]
-            was, cur = b["records"].get(edid), n["records"].get(edid)
+            was, cur = base_records.get(_key(edid)), n["records"].get(edid)
             who = rule.get("used_by", users)
             why = f": {rule['why']}" if rule.get("why") else ""
             if cur is None:
@@ -273,12 +310,13 @@ def compare(base, now, mods):
             continue  # skipped (reported above) or none asked for
         was_funcs = b.get("functions")
         if was_funcs is None and spec.get("functions"):
-            lines.append((NOTE, f"  {name}: no function baseline (snapshot ran without sf-pex-tools); run snapshot "
-                                f"again to check functions next time"))
+            lines.append((NOTE, f"  {name}: no function baseline (snapshot ran without sf-pex-tools); {RESNAPSHOT}, "
+                                f"with sf-pex-tools installed"))
             continue
+        was_funcs = _by_key(was_funcs)
         for script, names in (spec.get("functions") or {}).items():
-            was_script = (was_funcs or {}).get(script)
-            was = was_script or {}
+            was_script = was_funcs.get(_key(script))
+            was = {k.lower(): v for k, v in (was_script or {}).items()}
             cur = cur_funcs.get(script)
             if cur is None:
                 if was_script is None:
@@ -287,15 +325,16 @@ def compare(base, now, mods):
                     lines.append((ACTION, f"  {script}: script GONE from {spec['ba2']}"))
                 continue
             for fname in names:
+                old = was.get(fname.lower())
                 if fname not in cur:
-                    if fname in was:
+                    if old is not None:
                         lines.append((ACTION, f"  {script}: function {fname}() is GONE (called by name)"))
                     else:
                         lines.append((NOTE, f"  {script}: function {fname}() not found now or in the baseline (check "
                                             f"the name; inherited functions and functions inside states aren't "
                                             f"listed)"))
-                elif fname in was and cur[fname] != was[fname]:
-                    lines.append((ACTION, f"  {script}: {fname}() now takes {cur[fname]} arguments (was {was[fname]})"))
+                elif old is not None and cur[fname] != old:
+                    lines.append((ACTION, f"  {script}: {fname}() now takes {cur[fname]} arguments (was {old})"))
     return lines
 
 

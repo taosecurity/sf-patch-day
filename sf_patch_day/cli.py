@@ -149,7 +149,9 @@ def load_json(path, what):
     except OSError as e:
         raise drift.DriftError(f"can't read the {what} {path}: {e.strerror}. Fix: check the path, or run snapshot first.")
     except json.JSONDecodeError as e:
-        raise drift.DriftError(f"the {what} {path} isn't valid JSON (line {e.lineno}: {e.msg}). Fix: run snapshot again.")
+        raise drift.DriftError(f"the {what} {path} isn't valid JSON (line {e.lineno}: {e.msg}). Fix: restore it from "
+                               f"your backup or version control; a new snapshot only helps if your mod works with the "
+                               f"masters as they are now.")
 
 
 # ---- commands ---------------------------------------------------------------------------------------------------
@@ -211,6 +213,12 @@ def cmd_drift(args):
             "drift snapshot.")
         return 0
     mods = drift.load_mods(args.mods)
+    if args.drift_cmd == "snapshot":
+        # Before the (slow) scan: refuse a target we won't write.
+        refuse_game_folder(args.out, data)
+        if os.path.exists(args.out) and not args.force:
+            raise drift.DriftError(f"{args.out} already exists. Fix: add --force to replace it (only after you rebuild "
+                                   f"your mod), or pick another name.")
     tools, tools_msg = (None, "no functions listed")
     if any(s.get("functions") for s in mods["masters"].values()):
         tools, tools_msg = pextools.find(args.pex_tools)
@@ -218,7 +226,6 @@ def cmd_drift(args):
             return fail(tools_msg)
     now = drift.take(mods, dirs, tools, tools_msg)
     if args.drift_cmd == "snapshot":
-        refuse_game_folder(args.out, data)
         write_json(args.out, now, force=args.force)
         for name, e in now["masters"].items():
             missing = [k for k, v in e["records"].items() if v is None]
@@ -229,6 +236,8 @@ def cmd_drift(args):
                 + (f", {sum(len(v or {}) for v in e['functions'].values())} function(s)" if e.get("functions") else "")
                 + (f", scripts not found: {gone}" if gone else "")
                 + (f"; function checks skipped: {e['functions_skipped']}" if e.get("functions_skipped") else ""))
+            for warning in drift.not_found(mods["masters"][name], e):
+                say(f"  not found (check the name): {warning}")
         say(f"wrote {args.out}")
         return 0
     base = load_json(args.baseline, "baseline")

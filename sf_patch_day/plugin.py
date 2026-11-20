@@ -11,7 +11,11 @@ from . import log
 
 
 class PluginError(Exception):
-    """The plugin can't be read (missing, damaged, not a Starfield plugin)."""
+    """The plugin is damaged or isn't a Starfield plugin."""
+
+
+class PluginReadError(PluginError):
+    """The plugin file can't be opened or read (missing, locked by another program, no permission)."""
 
 
 def subrecords(data):
@@ -25,7 +29,7 @@ def subrecords(data):
         chunk = data[i:i + size]
         i += size
         if sig == "XXXX":
-            if len(chunk) < 4:
+            if len(chunk) != 4:
                 raise PluginError("a record has a damaged XXXX size field (the plugin is damaged)")
             big = struct.unpack("<I", chunk)[0]
             continue
@@ -45,7 +49,7 @@ def read_header(path):
     except struct.error as e:
         raise PluginError(f"{path}: damaged header ({e})")
     except OSError as e:
-        raise PluginError(f"{path}: {e.strerror or e}")
+        raise PluginReadError(f"{path}: {e.strerror or e}")
     masters = [d.rstrip(b"\0").decode("latin1") for s, d in subs if s == "MAST"]
     return flags, masters
 
@@ -107,7 +111,7 @@ class Plugin:
             self.data = mmap.mmap(self._file.fileno(), 0, access=mmap.ACCESS_READ)
         except (OSError, ValueError) as e:
             self._file.close()
-            raise PluginError(f"{path}: can't be read ({e})")
+            raise PluginReadError(f"{path}: can't be read ({e})")
         log.info("plugin", f"read {path}: {len(self.data):,} bytes, flags {self.flags:#x}, masters {self.masters}")
 
     def close(self):
