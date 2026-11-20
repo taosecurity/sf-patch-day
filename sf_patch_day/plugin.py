@@ -46,6 +46,10 @@ def read_header(path):
                 raise PluginError(f"{path}: not a Starfield plugin (no TES4 header)")
             size, flags = struct.unpack_from("<II", head, 4)
             subs = subrecords(f.read(size))
+    except PluginReadError:
+        raise
+    except PluginError as e:
+        raise PluginError(f"{path}: {e}")
     except struct.error as e:
         raise PluginError(f"{path}: damaged header ({e})")
     except OSError as e:

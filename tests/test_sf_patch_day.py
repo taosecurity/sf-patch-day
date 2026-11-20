@@ -250,8 +250,11 @@ class TestDllsCommand(Temp):
         self.assertIn("don't load on the Game Pass version, and some are locked", out)
         only_helpers = self.p("helpers")
         write(os.path.join(only_helpers, "Helper.dll"), mk.pe_file())
-        # No SFSE plugin checked, so Game Pass alone isn't exit 2 (it's 1 because this game has no SFSE file).
-        self.assertEqual(run("dlls", only_helpers, "--game", game)[0], 1)
+        # No SFSE plugin checked: nothing waits for an update, and on Game Pass the missing SFSE isn't news.
+        code, out = run("dlls", only_helpers, "--game", game)
+        self.assertEqual(code, 0, out)
+        self.assertIn("SFSE: not supported on Game Pass", out)
+        self.assertNotIn("waits for an SFSE update", out)
         self.assertEqual(run("dlls", "--game", self.p("nowhere"))[0], 3)
         self.assertEqual(run("dlls", self.p("x.zip"), "--game-version", "soon")[0], 3)
         self.assertEqual(run("dlls", self.p("missing.dll"), "--game-version", "1.16.300")[0], 3)
@@ -428,6 +431,22 @@ class TestDrift(Temp):
             self.assertIn("TM_Start", out)
             self.assertIn("damaged XXXX", out)
             self.assertNotIn("unexpected error", out)
+
+    def test_damaged_header_names_the_file(self):
+        bad = mk.record("TES4", 0, [mk.sub("HEDR", bytes(12)), mk.sub("XXXX", b"\x01\x00")], flags=1)
+        write(self.p("Data", "TestMaster.esm"), bad)
+        code, out = run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data)
+        self.assertEqual(code, 3, out)
+        self.assertIn("TestMaster.esm: a record has a damaged XXXX", out)
+
+    def test_names_listed_twice(self):
+        with open(self.mods, "w", encoding="utf-8") as f:
+            json.dump({"masters": {"TestMaster.esm": {"records": [{"edid": "TM_Quest"}, {"edid": "tm_quest"}]},
+                                   "testmaster.esm": {"records": []}}}, f)
+        code, out = self.check()
+        self.assertEqual(code, 3)
+        self.assertIn('"testmaster.esm" is listed twice', out)
+        self.assertIn('record "tm_quest" is listed twice', out)
 
     def test_name_case_fixed_after_snapshot(self):
         with open(self.mods, "w", encoding="utf-8") as f:

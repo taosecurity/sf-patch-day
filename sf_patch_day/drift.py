@@ -48,6 +48,25 @@ def validate_mods(mods):
     p = []
     if not isinstance(mods, dict) or not isinstance(mods.get("masters"), dict) or not mods["masters"]:
         return ['the top level needs "masters": {"<plugin file>": {...}, ...} with at least one plugin']
+
+    def twice(names):
+        seen, dup = set(), []
+        for n in names:
+            k = n.replace("\\", "/").lower()
+            (dup.append(n) if k in seen else seen.add(k))
+        return dup
+    for n in twice(mods["masters"]):
+        p.append(f'"{n}" is listed twice (names ignore case): list each master once')
+    for name, spec in mods["masters"].items():
+        if not isinstance(spec, dict):
+            continue
+        recs = spec.get("records", [])
+        if isinstance(recs, list):
+            for n in twice([r["edid"] for r in recs if isinstance(r, dict) and isinstance(r.get("edid"), str)]):
+                p.append(f'"{name}": record "{n}" is listed twice (Editor IDs ignore case)')
+        if isinstance(spec.get("functions"), dict):
+            for n in twice(list(spec["functions"])):
+                p.append(f'"{name}": script "{n}" is listed twice (paths ignore case and slash direction)')
     for name, spec in mods["masters"].items():
         if not isinstance(spec, dict):
             p.append(f'"{name}": must be an object')
@@ -223,12 +242,12 @@ def _by_key(d):
 
 
 def not_found(spec, entry):
-    """Names in the mods file that the snapshot didn't find: likely typos, worth fixing before an update."""
+    """Stages and functions in the mods file that the snapshot didn't find: likely typos, worth fixing before an
+    update. (Records not found are already on the snapshot's summary line.)"""
     out = []
     for r in spec.get("records", []):
         facts = entry["records"].get(r["edid"])
         if facts is None:
-            out.append(f"record {r['edid']}")
             continue
         for s in r.get("stages", []):
             if s not in facts.get("stages", []):

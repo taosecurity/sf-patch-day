@@ -263,7 +263,7 @@ def run(inputs, target, game, game_pass=False, al_dirs=()):
     base = base_layer(game, target)
     results = [judge(i, target, al_where is not None, base["sfse_version"]) for i in items]
     worst = max([EXIT_FOR[r["verdict"]] for r in results] + [0])
-    if base["sfse_found"] is False:
+    if base["sfse_found"] is False and not game_pass:  # on Game Pass SFSE never comes; that's said separately
         worst = max(worst, 1)
     if game_pass and any(r["verdict"] not in (NOT_SFSE, UNREADABLE) for r in results):
         worst = max(worst, 2)  # SFSE doesn't run on Game Pass, so no SFSE plugin loads there
@@ -287,7 +287,9 @@ def text_report(rep, how_version):
         lines.append("Game Pass install: SFSE doesn't support the Game Pass version of Starfield, so SFSE plugins "
                      "don't load there at all.")
     s = rep["sfse"]
-    if s["sfse_found"] is None:
+    if rep["game_pass"]:
+        lines.append("SFSE: not supported on Game Pass, so no SFSE update will make these plugins load there")
+    elif s["sfse_found"] is None:
         lines.append("SFSE: not checked (no game folder; give --game to check it)")
     elif s["sfse_found"]:
         lines.append(f"SFSE: {pe.version_text(s['sfse_version']) or 'version unknown'} for this game version found "
