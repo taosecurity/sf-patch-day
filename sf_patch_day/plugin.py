@@ -25,6 +25,8 @@ def subrecords(data):
         chunk = data[i:i + size]
         i += size
         if sig == "XXXX":
+            if len(chunk) < 4:
+                raise PluginError("a record has a damaged XXXX size field (the plugin is damaged)")
             big = struct.unpack("<I", chunk)[0]
             continue
         out.append((sig, chunk))

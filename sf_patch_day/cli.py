@@ -64,6 +64,8 @@ def build_parser():
         x.add_argument("--mods", required=True, metavar="FILE", help="the mods file (what your mod relies on)")
         if name == "snapshot":
             x.add_argument("-o", "--out", required=True, metavar="FILE", help="the baseline file to write")
+            x.add_argument("--force", action="store_true", help="overwrite FILE if it exists (take a new baseline "
+                                                                "only after rebuilding your mod)")
         else:
             x.add_argument("--baseline", required=True, metavar="FILE", help="the baseline written by snapshot")
             x.add_argument("--json", action="store_true", help="print the findings as JSON")
@@ -217,7 +219,7 @@ def cmd_drift(args):
     now = drift.take(mods, dirs, tools, tools_msg)
     if args.drift_cmd == "snapshot":
         refuse_game_folder(args.out, data)
-        write_json(args.out, now)
+        write_json(args.out, now, force=args.force)
         for name, e in now["masters"].items():
             missing = [k for k, v in e["records"].items() if v is None]
             gone = [s for s, v in (e.get("functions") or {}).items() if v is None]

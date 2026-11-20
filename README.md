@@ -119,8 +119,12 @@ sf-patch-day drift check --mods mods.json --baseline baseline.json    3. after e
    - `SKIP`: a check couldn't run (function checks without sf-pex-tools).
 
 Options: `--data <folder>` (the game's Data folder; found automatically), `--plugin-dir <folder>` (searched first;
-repeat it for several), `--pex-tools <folder>`, `--json` (check), `--force` (init, to overwrite), `--verbose`,
-`--log <file>`.
+repeat it for several), `--pex-tools <folder>`, `--json` (check), `--force` (init and snapshot, to overwrite; take a new baseline only after you rebuild your mod,
+never instead of `check`), `--verbose`, `--log <file>`.
+
+Names are matched the way the game matches them: Editor IDs, script paths and function names ignore case, and
+record types are read in upper case. A record, stage, script or function that is missing now and was also missing
+when you took the baseline is a `NOTE` (check the name), not a rebuild.
 
 The baseline holds only sizes, hashes, FormIDs, stage numbers, condition counts and function names. It never holds
 record contents or script code, so you can keep it in a public repository.
@@ -189,11 +193,12 @@ Mod managers keep mods outside the game folder until they deploy them:
 |---|---|---|
 | 0 | Every plugin checked works. | No change. |
 | 1 | Some plugins need Address Library, may fail, or need a newer SFSE, or SFSE for this version is missing. | A master changed, but nothing your mod uses; or a check was skipped. |
-| 2 | At least one plugin is locked to other game versions. | Rebuild: something your mod uses changed. |
+| 2 | At least one plugin is locked to other game versions, or the install is Game Pass (SFSE doesn't run there). | Rebuild: something your mod uses changed. |
 | 3 | A file couldn't be read, or the command was wrong. | A file couldn't be read, or the command was wrong. |
 
-`drift init`, `drift snapshot` and `fingerprint` return 0 on success and 3 on a problem. Every run ends with a
-`RESULT:` line.
+`drift init`, `drift snapshot` and `fingerprint` return 0 on success and 3 on a problem. The text reports of `dlls`
+and `drift check`, and every failed run, end with a `RESULT:` line; with `--json` the report is JSON only, with
+the exit code in its `exit` field. Scripts should rely on the exit code.
 
 ## Logs
 

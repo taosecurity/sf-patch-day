@@ -37,6 +37,10 @@ def load_mods(path):
     if problems:
         raise DriftError(f"{path} doesn't follow the mods file format:\n  " + "\n  ".join(problems) +
                          "\nFix: see the README section 'The mods file' and examples/mods.example.json.")
+    for spec in mods["masters"].values():
+        for r in spec.get("records", []):
+            if "type" in r:
+                r["type"] = r["type"].upper()  # record types are upper case in the file (QUST, not qust)
     return mods
 
 
@@ -63,6 +67,11 @@ def validate_mods(mods):
                 p.append(f'"{name}".records[{i}] ({r["edid"]}): "stages" must be a list of stage numbers')
             if "type" in r and not (isinstance(r["type"], str) and len(r["type"]) == 4):
                 p.append(f'"{name}".records[{i}] ({r["edid"]}): "type" must be a 4-letter record type such as QUST')
+            if "used_by" in r and not isinstance(r["used_by"], str):
+                p.append(f'"{name}".records[{i}] ({r["edid"]}): "used_by" must be text')
+        ub = spec.get("used_by", [])
+        if not isinstance(ub, list) or not all(isinstance(u, str) for u in ub):
+            p.append(f'"{name}".used_by must be a list of names, such as ["MyMod.esm"]')
         funcs = spec.get("functions", {})
         if funcs:
             if not isinstance(spec.get("ba2"), str):
@@ -167,9 +176,15 @@ def take(mods, dirs, tools=None, tools_msg=""):
                 }
                 for r in recs:
                     hit = found.get(r["edid"].lower())
-                    entry["records"][r["edid"]] = record_facts(*hit, plugin) if hit else None
-        except (OSError, PluginError) as e:
-            raise DriftError(f"{e}. Fix: close the game and the Creation Kit, and check you can read the file.")
+                    try:
+                        entry["records"][r["edid"]] = record_facts(*hit, plugin) if hit else None
+                    except PluginError as e:
+                        raise PluginError(f"{path}: {r['edid']}: {e}")
+        except PluginError as e:
+            raise DriftError(f"{e}. Fix: if the file is damaged, verify the game files in Steam or reinstall the mod.")
+        except OSError as e:
+            raise DriftError(f"{path}: {e.strerror or e}. Fix: close the game and the Creation Kit, and check you can "
+                             f"read the file.")
         log.info("drift", f"{name}: {path}, {len(found)} of {len(recs)} records found")
         if spec.get("functions"):
             if tools is None:
@@ -178,8 +193,14 @@ def take(mods, dirs, tools=None, tools_msg=""):
             else:
                 ba2_path = find_file(spec["ba2"], dirs, "Archive")
                 got = script_functions(tools, ba2_path, list(spec["functions"]))
-                entry["functions"] = {s: ({n: got[s][n] for n in names if n in got[s]} if got[s] is not None else None)
-                                      for s, names in spec["functions"].items()}
+                entry["functions"] = {}
+                for s, names in spec["functions"].items():
+                    if got[s] is None:
+                        entry["functions"][s] = None
+                        continue
+                    # Papyrus names ignore case: match the mods file's spelling to the script's either way.
+                    low = {k.lower(): v for k, v in got[s].items()}
+                    entry["functions"][s] = {n: low[n.lower()] for n in names if n.lower() in low}
         snap["masters"][name] = entry
     return snap
 
@@ -225,8 +246,13 @@ def compare(base, now, mods):
                 lines.append((ACTION, f"  {edid}: now {cur['type']} {cur['formid']} (was {was['type']} "
                                       f"{was['formid']}; {who})"))
             for stage in rule.get("stages", []):
-                if stage not in cur.get("stages", []):
+                if stage in cur.get("stages", []):
+                    continue
+                if stage in was.get("stages", []):
                     lines.append((ACTION, f"  {edid}: stage {stage} is GONE ({who} sets it)"))
+                else:
+                    lines.append((NOTE, f"  {edid}: stage {stage} not found now or in the baseline (check the "
+                                        f"number{'' if cur['type'] == 'QUST' else '; only quests have stages'})"))
             if cur["sha256"] == was["sha256"]:
                 continue
             if rule.get("copied"):
@@ -251,14 +277,23 @@ def compare(base, now, mods):
                                 f"again to check functions next time"))
             continue
         for script, names in (spec.get("functions") or {}).items():
-            was = (was_funcs or {}).get(script) or {}
+            was_script = (was_funcs or {}).get(script)
+            was = was_script or {}
             cur = cur_funcs.get(script)
             if cur is None:
-                lines.append((ACTION, f"  {script}: script GONE from {spec['ba2']}"))
+                if was_script is None:
+                    lines.append((NOTE, f"  {script}: not in {spec['ba2']} now or in the baseline (check the path)"))
+                else:
+                    lines.append((ACTION, f"  {script}: script GONE from {spec['ba2']}"))
                 continue
             for fname in names:
                 if fname not in cur:
-                    lines.append((ACTION, f"  {script}: function {fname}() is GONE (called by name)"))
+                    if fname in was:
+                        lines.append((ACTION, f"  {script}: function {fname}() is GONE (called by name)"))
+                    else:
+                        lines.append((NOTE, f"  {script}: function {fname}() not found now or in the baseline (check "
+                                            f"the name; inherited functions and functions inside states aren't "
+                                            f"listed)"))
                 elif fname in was and cur[fname] != was[fname]:
                     lines.append((ACTION, f"  {script}: {fname}() now takes {cur[fname]} arguments (was {was[fname]})"))
     return lines

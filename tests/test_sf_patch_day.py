@@ -194,6 +194,43 @@ class TestDllsCommand(Temp):
         self.assertIn("[dlls]", text)
         self.assertIn("Locked.dll", text)
 
+    def test_one_bad_zip_member_is_only_that_file(self):
+        game = self.make_game(with_al=True)
+        z = self.p("mixed.zip")
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("Locked/Secret.dll", mk.sfse_plugin(name="Secret"))
+            zf.writestr("Good.dll", mk.sfse_plugin(name="Good", address=4, structure=8))
+        # Mark the first member "encrypted" (bit 0 of its flags, in the local and central headers): reading it then
+        # raises RuntimeError, as a password-protected download does.
+        with open(z, "rb") as f:
+            data = bytearray(f.read())
+        data[6] |= 1
+        central = data.index(b"PK\x01\x02")
+        data[central + 8] |= 1
+        with open(z, "wb") as f:
+            f.write(data)
+        code, rep = self.report(z, "--game", game)
+        self.assertEqual(self.verdicts(rep), {"mixed.zip :: Locked/Secret.dll": dlls.UNREADABLE,
+                                              "mixed.zip :: Good.dll": dlls.WORKS})
+        self.assertEqual(code, 3)
+
+    def test_unreadable_folder_is_reported(self):
+        folder = self.p("Plugins")
+        os.makedirs(folder)
+        real_walk = dlls.os.walk
+
+        def walk(path, onerror=None):
+            onerror(PermissionError(13, "Access is denied", path))
+            return iter(())
+        dlls.os.walk = walk
+        try:
+            items, _al, problems = dlls.collect([folder])
+        finally:
+            dlls.os.walk = real_walk
+        self.assertEqual(items, [])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("Access is denied", problems[0][1])
+
     def test_hint(self):
         path = self.p("Quiet.dll")
         write(path, mk.sfse_plugin(name="Quiet", address=1, structure=1, extra="versionlib".encode("utf-16-le")))
@@ -206,6 +243,11 @@ class TestDllsCommand(Temp):
         write(os.path.join(game, "appxmanifest.xml"), b"<made-up/>")
         code, out = run("dlls", "--game", game)
         self.assertIn("Game Pass install", out)
+        self.assertEqual(code, 3)  # Broken.dll; without it, Game Pass alone gives 2
+        os.remove(os.path.join(game, "Data", "SFSE", "Plugins", "Broken.dll"))
+        code, out = run("dlls", "--game", game)
+        self.assertEqual(code, 2)
+        self.assertIn("don't load on the Game Pass version", out)
         self.assertEqual(run("dlls", "--game", self.p("nowhere"))[0], 3)
         self.assertEqual(run("dlls", self.p("x.zip"), "--game-version", "soon")[0], 3)
         self.assertEqual(run("dlls", self.p("missing.dll"), "--game-version", "1.16.300")[0], 3)
@@ -341,6 +383,45 @@ class TestDrift(Temp):
         with Plugin(self.p("Data", "LightMaster.esm"), [self.data]) as p:
             self.assertEqual(p.mask, 0xFFF)
 
+    def test_stage_never_there_is_a_note(self):
+        with open(self.mods, "w", encoding="utf-8") as f:
+            json.dump({"masters": {"TestMaster.esm": {"records": [{"edid": "TM_Quest", "stages": [10, 99]}]}}}, f)
+        self.snap()
+        write(self.p("Data", "TestMaster.esm"), master_esm(glob_value=2.0))
+        code, out = self.check()
+        self.assertEqual(code, 1, out)
+        self.assertIn("stage 99 not found now or in the baseline", out)
+
+    def test_lower_case_type_and_used_by(self):
+        with open(self.mods, "w", encoding="utf-8") as f:
+            json.dump({"masters": {"TestMaster.esm": {"used_by": ["MyMod"], "records": [
+                {"edid": "tm_quest", "type": "qust"}]}}}, f)
+        self.snap()
+        with open(self.base, encoding="utf-8") as f:
+            self.assertIsNotNone(json.load(f)["masters"]["TestMaster.esm"]["records"]["tm_quest"])
+        with open(self.mods, "w", encoding="utf-8") as f:
+            json.dump({"masters": {"TestMaster.esm": {"used_by": "MyMod", "records": []}}}, f)
+        code, out = self.check()
+        self.assertEqual(code, 3)
+        self.assertIn("used_by must be a list", out)
+
+    def test_snapshot_keeps_the_old_baseline(self):
+        self.snap()
+        code, out = run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data)
+        self.assertEqual(code, 3)
+        self.assertIn("--force", out)
+        self.assertEqual(run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data,
+                             "--force")[0], 0)
+
+    def test_damaged_record(self):
+        write(self.p("Data", "TestMaster.esm"), mk.plugin(0x1, ["Starfield.esm"], [mk.group("CNDF", [
+            mk.record("CNDF", 0x01000801, [mk.edid("TM_Start"), mk.sub("XXXX", b"\x01\x00")])])]))
+        code, out = run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data)
+        self.assertEqual(code, 3, out)
+        self.assertIn("TM_Start", out)
+        self.assertIn("damaged XXXX", out)
+        self.assertNotIn("unexpected error", out)
+
     def test_skip_without_pex_tools(self):
         mods = drift.load_mods(self.mods)
         mods["masters"]["TestMaster.esm"]["ba2"] = "TestMaster - Main.ba2"
@@ -363,23 +444,32 @@ class TestDriftFunctions(Temp):
         mods, base = self.p("mods.json"), self.p("base.json")
         with open(mods, "w", encoding="utf-8") as f:
             json.dump({"masters": {"TestMaster.esm": {"ba2": "TestMaster - Main.ba2", "records": [], "functions": {
-                "Scripts/SfPexToolsTest/Alpha.pex": ["AddMission", "Score"],
+                "Scripts/SfPexToolsTest/Alpha.pex": ["AddMission", "Score", "trycount", "NoSuchFunction"],
                 "scripts/SfPexToolsTest/Gone.pex": ["Nothing"]}}}}, f)
         self.assertEqual(run("drift", "snapshot", "--mods", mods, "-o", base, "--data", data,
                              "--pex-tools", TOOLS.folder)[0], 0)
         with open(base, encoding="utf-8") as f:
             b = json.load(f)
         funcs = b["masters"]["TestMaster.esm"]["functions"]
-        self.assertEqual(funcs["Scripts/SfPexToolsTest/Alpha.pex"], {"AddMission": 2, "Score": 3})
+        # trycount matches TryCount: Papyrus names ignore case.
+        self.assertEqual(funcs["Scripts/SfPexToolsTest/Alpha.pex"], {"AddMission": 2, "Score": 3, "trycount": 0})
         self.assertIsNone(funcs["scripts/SfPexToolsTest/Gone.pex"])
-        # Pretend the update changed Score's arguments, and the archive lost a script.
+        code, out = run("drift", "check", "--mods", mods, "--baseline", base, "--data", data,
+                        "--pex-tools", TOOLS.folder)
+        self.assertEqual(code, 1, out)  # missing now and in the baseline: check the name, not a rebuild
+        self.assertIn("NoSuchFunction() not found now or in the baseline", out)
+        self.assertIn("Gone.pex: not in", out)
+        # Pretend the update changed Score's arguments, and the archive lost a script and a function.
         funcs["Scripts/SfPexToolsTest/Alpha.pex"]["Score"] = 2
+        funcs["Scripts/SfPexToolsTest/Alpha.pex"]["NoSuchFunction"] = 1
+        funcs["scripts/SfPexToolsTest/Gone.pex"] = {"Nothing": 0}
         with open(base, "w", encoding="utf-8") as f:
             json.dump(b, f)
         code, out = run("drift", "check", "--mods", mods, "--baseline", base, "--data", data,
                         "--pex-tools", TOOLS.folder)
         self.assertEqual(code, 2, out)
         self.assertIn("Score() now takes 3 arguments (was 2)", out)
+        self.assertIn("function NoSuchFunction() is GONE", out)
         self.assertIn("Gone.pex: script GONE", out)
         self.assertEqual(run("drift", "check", "--mods", mods, "--baseline", base, "--data", data,
                              "--pex-tools", self.p("nowhere"))[0], 3)

@@ -11,6 +11,7 @@ import mmap
 import os
 import re
 import zipfile
+import zlib
 
 from . import log, pe
 
@@ -75,7 +76,9 @@ def collect(inputs):
     for path in inputs:
         if os.path.isdir(path):
             log.info("collect", f"searching folder {path}")
-            for root, dirs, files in os.walk(path):
+            def unreadable(e):
+                problems.append((e.filename or path, f"can't be read ({e.strerror or e})"))
+            for root, dirs, files in os.walk(path, onerror=unreadable):
                 dirs.sort()
                 for f in sorted(files):
                     full = os.path.join(root, f)
@@ -176,7 +179,10 @@ def judge(item, target, al_present, sfse_version):
 
     try:
         block, mentions = _with_bytes(item, read)
-    except (pe.PEError, OSError, zipfile.BadZipFile, KeyError, ValueError) as e:
+    # zipfile can also raise RuntimeError (an encrypted member), NotImplementedError (Deflate64 and other methods),
+    # EOFError and zlib.error (cut-off data). Any of these makes this one file unreadable, not the whole run.
+    except (pe.PEError, OSError, zipfile.BadZipFile, KeyError, ValueError, RuntimeError, NotImplementedError,
+            EOFError, zlib.error) as e:
         out.update(verdict=UNREADABLE, reason=str(e), what_to_do=WHAT_TO_DO[UNREADABLE])
         log.info("dlls", f"{item.label}: unreadable: {e}")
         return out
@@ -257,6 +263,8 @@ def run(inputs, target, game, game_pass=False, al_dirs=()):
     worst = max([EXIT_FOR[r["verdict"]] for r in results] + [0])
     if base["sfse_found"] is False:
         worst = max(worst, 1)
+    if game_pass and results:
+        worst = max(worst, 2)  # SFSE doesn't run on Game Pass, so no plugin loads there
     if problems:
         worst = 3
     counts = {}
@@ -311,5 +319,7 @@ def text_report(rep, how_version):
     summary = ", ".join(f"{v.lower()}: {c[v]}" for v in ORDER if c.get(v)) or "no DLLs"
     word = {0: "everything checked loads", 1: "some plugins wait for an update or need testing",
             2: "some plugins are locked to other game versions", 3: "some files couldn't be read"}[rep["exit"]]
+    if rep["game_pass"] and rep["exit"] == 2:
+        word = "SFSE plugins don't load on the Game Pass version"
     lines.append(f"RESULT: {word} ({summary})")
     return lines

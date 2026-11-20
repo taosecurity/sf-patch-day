@@ -64,10 +64,13 @@ author must add quest stages and script functions by hand; init only finds overr
 
 - Inputs: DLLs, zips and folders (dlls); a mods file, a baseline, the game's Data folder and optional
   `--plugin-dir` folders (drift).
-- Outputs: a report on stdout ending in a `RESULT:` line. `drift init` writes the mods file you name; `drift
-  snapshot` writes the baseline you name. Nothing else is written. Both refuse to write inside the game folder.
+- Outputs: a report on stdout. The text reports of `dlls` and `drift check`, and every failed run, end with a
+  `RESULT:` line; `--json` prints JSON only. Judge a run by its exit code. `drift init` writes the mods file you
+  name; `drift snapshot` writes the baseline you name. Both refuse to overwrite without `--force` and refuse to
+  write inside the game folder. Nothing else is written. Never rerun `snapshot --force` in place of `check` after
+  an update: that replaces the baseline the check needs.
 - Exit codes: dlls 0 all work, 1 some need Address Library / may fail / need newer SFSE / SFSE missing, 2 some
-  locked, 3 can't read or bad command. drift check 0 no change, 1 changed but unused or a check skipped,
+  locked or a Game Pass install, 3 can't read or bad command. drift check 0 no change, 1 changed but unused or a check skipped,
   2 rebuild, 3 can't read or bad command. init, snapshot and fingerprint: 0 done, 3 problem.
 - Log: `--verbose` writes it to stderr; `--log <file>` writes it to a file. Off unless asked.
 
