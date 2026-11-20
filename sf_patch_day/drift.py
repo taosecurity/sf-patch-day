@@ -243,7 +243,7 @@ def _by_key(d):
 
 def not_found(spec, entry):
     """Stages and functions in the mods file that the snapshot didn't find: likely typos, worth fixing before an
-    update. (Records not found are already on the snapshot's summary line.)"""
+    update. (Records and scripts not found are already on the snapshot's summary line.)"""
     out = []
     for r in spec.get("records", []):
         facts = entry["records"].get(r["edid"])
@@ -257,7 +257,6 @@ def not_found(spec, entry):
         if entry.get("functions") is None:
             break  # skipped: said already
         if got is None:
-            out.append(f"script {script}")
             continue
         out += [f"{script} function {n}()" for n in names if n not in got]
     return out

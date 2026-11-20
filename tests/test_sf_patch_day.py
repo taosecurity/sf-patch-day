@@ -438,6 +438,11 @@ class TestDrift(Temp):
         code, out = run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data)
         self.assertEqual(code, 3, out)
         self.assertIn("TestMaster.esm: a record has a damaged XXXX", out)
+        write(self.p("Data", "TestMaster.esm"), b"just some text, not a plugin")
+        code, out = run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data)
+        self.assertEqual(code, 3, out)
+        self.assertIn("not a Starfield plugin", out)
+        self.assertEqual(out.count("TestMaster.esm"), 1, out)  # the path is named once
 
     def test_names_listed_twice(self):
         with open(self.mods, "w", encoding="utf-8") as f:

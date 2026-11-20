@@ -283,12 +283,10 @@ ORDER = [LOCKED, NEEDS_SFSE, NEEDS_AL, MAY_FAIL, UNREADABLE, WORKS, NOT_SFSE]
 
 def text_report(rep, how_version):
     lines = [f"Game version: {rep['game_version']} ({how_version})"]
-    if rep["game_pass"]:
-        lines.append("Game Pass install: SFSE doesn't support the Game Pass version of Starfield, so SFSE plugins "
-                     "don't load there at all.")
     s = rep["sfse"]
     if rep["game_pass"]:
-        lines.append("SFSE: not supported on Game Pass, so no SFSE update will make these plugins load there")
+        lines.append("SFSE: not supported on Game Pass (a Game Pass install), so SFSE plugins don't load there and "
+                     "no SFSE update will change that")
     elif s["sfse_found"] is None:
         lines.append("SFSE: not checked (no game folder; give --game to check it)")
     elif s["sfse_found"]:

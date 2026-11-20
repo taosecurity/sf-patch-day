@@ -49,7 +49,9 @@ def read_header(path):
     except PluginReadError:
         raise
     except PluginError as e:
-        raise PluginError(f"{path}: {e}")
+        if str(e).startswith(str(path)):
+            raise
+        raise PluginError(f"{path}: {e}")  # an error from subrecords(), which doesn't know the file
     except struct.error as e:
         raise PluginError(f"{path}: damaged header ({e})")
     except OSError as e:
