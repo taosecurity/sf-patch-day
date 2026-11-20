@@ -285,8 +285,8 @@ def text_report(rep, how_version):
     lines = [f"Game version: {rep['game_version']} ({how_version})"]
     s = rep["sfse"]
     if rep["game_pass"]:
-        lines.append("SFSE: not supported on Game Pass (a Game Pass install), so SFSE plugins don't load there and "
-                     "no SFSE update will change that")
+        lines.append("SFSE: this is a Game Pass install, and SFSE doesn't support Game Pass, so SFSE plugins don't "
+                     "load here and no SFSE update will change that")
     elif s["sfse_found"] is None:
         lines.append("SFSE: not checked (no game folder; give --game to check it)")
     elif s["sfse_found"]:

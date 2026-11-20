@@ -242,7 +242,7 @@ class TestDllsCommand(Temp):
         game = self.make_game(with_sfse=False)
         write(os.path.join(game, "appxmanifest.xml"), b"<made-up/>")
         code, out = run("dlls", "--game", game)
-        self.assertIn("Game Pass install", out)
+        self.assertIn("SFSE: this is a Game Pass install, and SFSE doesn't support Game Pass", out)
         self.assertEqual(code, 3)  # Broken.dll; without it, Game Pass alone gives 2
         os.remove(os.path.join(game, "Data", "SFSE", "Plugins", "Broken.dll"))
         code, out = run("dlls", "--game", game)
@@ -253,7 +253,7 @@ class TestDllsCommand(Temp):
         # No SFSE plugin checked: nothing waits for an update, and on Game Pass the missing SFSE isn't news.
         code, out = run("dlls", only_helpers, "--game", game)
         self.assertEqual(code, 0, out)
-        self.assertIn("SFSE: not supported on Game Pass", out)
+        self.assertEqual(out.count("Game Pass install"), 1, out)  # said once
         self.assertNotIn("waits for an SFSE update", out)
         self.assertEqual(run("dlls", "--game", self.p("nowhere"))[0], 3)
         self.assertEqual(run("dlls", self.p("x.zip"), "--game-version", "soon")[0], 3)

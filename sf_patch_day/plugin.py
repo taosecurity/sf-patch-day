@@ -18,6 +18,10 @@ class PluginReadError(PluginError):
     """The plugin file can't be opened or read (missing, locked by another program, no permission)."""
 
 
+class SubrecordError(PluginError):
+    """A damaged field inside a record, found by subrecords(), which doesn't know the file's path."""
+
+
 def subrecords(data):
     out, i, big = [], 0, None
     while i + 6 <= len(data):
@@ -30,7 +34,7 @@ def subrecords(data):
         i += size
         if sig == "XXXX":
             if len(chunk) != 4:
-                raise PluginError("a record has a damaged XXXX size field (the plugin is damaged)")
+                raise SubrecordError("a record has a damaged XXXX size field (the plugin is damaged)")
             big = struct.unpack("<I", chunk)[0]
             continue
         out.append((sig, chunk))
@@ -46,12 +50,8 @@ def read_header(path):
                 raise PluginError(f"{path}: not a Starfield plugin (no TES4 header)")
             size, flags = struct.unpack_from("<II", head, 4)
             subs = subrecords(f.read(size))
-    except PluginReadError:
-        raise
-    except PluginError as e:
-        if str(e).startswith(str(path)):
-            raise
-        raise PluginError(f"{path}: {e}")  # an error from subrecords(), which doesn't know the file
+    except SubrecordError as e:
+        raise PluginError(f"{path}: {e}")  # subrecords() doesn't know the file
     except struct.error as e:
         raise PluginError(f"{path}: damaged header ({e})")
     except OSError as e:
