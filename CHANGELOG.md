@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 (not yet released)
+## 0.1.2 (2026-11-20)
 
 - `sf-patch-day` with no command, and `sf-patch-day drift` with no step, now print the help and then a
   `RESULT: CANNOT CHECK` line on stderr, like every other command-line mistake (exit 3). `drift` with no step used
