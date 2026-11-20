@@ -444,6 +444,19 @@ class TestDrift(Temp):
         self.assertIn("not a Starfield plugin", out)
         self.assertEqual(out.count("TestMaster.esm"), 1, out)  # the path is named once
 
+    def test_file_names_ignore_case(self):
+        from sf_patch_day import plugin as plugin_module
+        folder = self.p("CaseTest")
+        write(os.path.join(folder, "foo.ESM"), mk.plugin(0x1))
+        plugin_module.clear_cache()
+        found = plugin_module.find_plugin("Foo.esm", [folder])
+        self.assertIsNotNone(found)
+        self.assertEqual(os.path.basename(found).lower(), "foo.esm")
+        exact = os.path.join(folder, "Bar.esm")
+        write(exact, mk.plugin(0x1))
+        self.assertEqual(plugin_module.find_plugin("Bar.esm", [folder]), exact)  # the exact name comes first
+        self.assertIsNone(plugin_module.find_plugin("Missing.esm", [folder]))
+
     def test_names_listed_twice(self):
         with open(self.mods, "w", encoding="utf-8") as f:
             json.dump({"masters": {"TestMaster.esm": {"records": [{"edid": "TM_Quest"}, {"edid": "tm_quest"}]},

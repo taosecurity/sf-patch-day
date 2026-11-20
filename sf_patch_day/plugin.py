@@ -77,17 +77,41 @@ def id_mask(flags):
 def find_plugin(name, dirs):
     """The first <dir>\\<name> that exists, or None. The game ignores case in file names (on Linux too, through
     Proton), so when the exact spelling isn't there, a file whose name differs only in case is used."""
+    want = name.lower()
     for d in dirs:
         p = os.path.join(d, name)
         if os.path.isfile(p):
             return p
+        # Sorted, so the same file is picked on every run when several differ only in case.
+        matches = sorted(f for f in _folder_index(d).get(want, []) if os.path.isfile(os.path.join(d, f)))
+        if matches:
+            if len(matches) > 1:
+                log.info("plugin", f"{d}: {', '.join(matches)} all match {name} (the game would see one file); "
+                                   f"using {matches[0]}")
+            log.info("plugin", f"{name}: using {os.path.join(d, matches[0])} (the name differs only in case)")
+            return os.path.join(d, matches[0])
+    return None
+
+
+_INDEX = {}
+
+
+def clear_cache():
+    """Forget the folder listings (each command starts with a fresh look at the folders)."""
+    _INDEX.clear()
+
+
+def _folder_index(d):
+    """{lowercase file name: [names as stored]} for a folder, read once per run."""
+    if d not in _INDEX:
+        idx = {}
         try:
             for f in os.listdir(d):
-                if f.lower() == name.lower() and os.path.isfile(os.path.join(d, f)):
-                    return os.path.join(d, f)
+                idx.setdefault(f.lower(), []).append(f)
         except OSError:
             pass
-    return None
+        _INDEX[d] = idx
+    return _INDEX[d]
 
 
 class Plugin:

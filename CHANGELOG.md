@@ -15,3 +15,5 @@ First release.
 - `fingerprint`: a plugin's probe FormID and highest own FormID, for in-game update checks.
 - `--verbose` and `--log <file>`, `--json` (dlls, drift check), Steam and Game Pass found automatically, MO2 and
   Vortex folders as options. Read-only on the game folder, no network use.
+- Names are matched the way the game matches them: Editor IDs, script paths, function names and plugin and
+  archive file names ignore case, on Linux (Proton) too.

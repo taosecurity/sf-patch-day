@@ -8,6 +8,7 @@ import sys
 import traceback
 
 from . import VERSION, dlls, drift, log, paths, pe, pextools
+from . import plugin as plugin_module
 from .plugin import Plugin, PluginError, PROBE_TYPES
 
 CANNOT = 3
@@ -273,6 +274,7 @@ def main(argv=None):
     if not args.cmd:
         build_parser().print_help()
         return CANNOT
+    plugin_module.clear_cache()
     err = log.setup(args.verbose, args.log)
     if err:
         return fail(err)
