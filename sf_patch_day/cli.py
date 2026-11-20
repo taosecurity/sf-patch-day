@@ -200,8 +200,7 @@ def cmd_dlls(args):
 
 
 def cmd_drift(args):
-    if not args.drift_cmd:
-        return fail("drift needs a step: init, snapshot or check. Fix: see sf-patch-day drift --help")
+    # main() has already answered a bare "drift" (no step) with the help and a RESULT line.
     dirs, data = data_dirs(args)
     if args.drift_cmd == "init":
         refuse_game_folder(args.out, data)
@@ -308,20 +307,24 @@ def main(argv=None):
     try:  # everything after this point ends in the finally below: the log closed and --json reset
         err = log.setup(args.verbose, args.log)
         if err:
-            return fail(err)
+            code = fail(err)
+            return code
         log_open = True
         log.info("start", f"sf-patch-day {VERSION}, Python {sys.version.split()[0]}, {sys.platform}, "
                           f"args {argv or sys.argv[1:]}")
         code = {"dlls": cmd_dlls, "drift": cmd_drift, "fingerprint": cmd_fingerprint}[args.cmd](args)
         return code
     except drift.DriftError as e:
-        return fail(str(e))
+        code = fail(str(e))
+        return code
     except KeyboardInterrupt:
-        return fail("stopped (Ctrl+C)")
+        code = fail("stopped (Ctrl+C)")
+        return code
     except Exception as e:  # last resort: one line for the reader, the traceback in the log
         log.info("error", traceback.format_exc())
-        return fail(f"unexpected error ({type(e).__name__}: {e}). Run again with --verbose and report the log at "
+        code = fail(f"unexpected error ({type(e).__name__}: {e}). Run again with --verbose and report the log at "
                     f"https://github.com/taosecurity/sf-patch-day/issues")
+        return code
     finally:
         if log_open:  # the last log line says how the run ended (a log that never opened gets none)
             log.info("end", f"exit code {code}")
