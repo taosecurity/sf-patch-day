@@ -200,8 +200,9 @@ Mod managers keep mods outside the game folder until they deploy them:
 | 3 | A file couldn't be read, or the command was wrong. | A file couldn't be read, or the command was wrong. |
 
 `drift init`, `drift snapshot` and `fingerprint` return 0 on success and 3 on a problem. The text reports of `dlls`
-and `drift check`, and every failed run, end with a `RESULT:` line; with `--json` the report is JSON only, with
-the exit code in its `exit` field. Scripts should rely on the exit code.
+and `drift check`, and every failed run, end with a `RESULT:` line; with `--json` a finished report is JSON only,
+with the exit code in its `exit` field, while a failed run (exit 3) prints plain text: any WARNING lines about
+copies of a file, then the `RESULT:` line. Scripts should rely on the exit code.
 
 ## Logs
 

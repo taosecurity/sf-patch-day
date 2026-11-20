@@ -297,7 +297,9 @@ def main(argv=None):
     plugin_module.clear_cache()
     err = log.setup(args.verbose, args.log)
     if err:
-        return fail(err)
+        code = fail(err)
+        _JSON[0] = False
+        return code
     log.info("start", f"sf-patch-day {VERSION}, Python {sys.version.split()[0]}, {sys.platform}, args {argv or sys.argv[1:]}")
     try:
         return {"dlls": cmd_dlls, "drift": cmd_drift, "fingerprint": cmd_fingerprint}[args.cmd](args)

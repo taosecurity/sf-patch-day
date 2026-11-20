@@ -65,7 +65,8 @@ author must add quest stages and script functions by hand; init only finds overr
 - Inputs: DLLs, zips and folders (dlls); a mods file, a baseline, the game's Data folder and optional
   `--plugin-dir` folders (drift).
 - Outputs: a report on stdout. The text reports of `dlls` and `drift check`, and every failed run, end with a
-  `RESULT:` line; `--json` prints JSON only. Judge a run by its exit code. `drift init` writes the mods file you
+  `RESULT:` line; `--json` prints JSON only when the run finishes, and a failed run (exit 3) prints plain text
+  (WARNING lines, then `RESULT: CANNOT CHECK`). Judge a run by its exit code. `drift init` writes the mods file you
   name; `drift snapshot` writes the baseline you name. Both refuse to overwrite without `--force` and refuse to
   write inside the game folder. Nothing else is written. Never rerun `snapshot --force` in place of `check` after
   an update: that replaces the baseline the check needs.
