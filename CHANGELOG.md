@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 (not yet released)
+## 0.1.1 (2026-11-20)
 
 Small fixes to the case-insensitive file name lookup added in 0.1.0 (used on Linux and Proton, where file names
 are case-sensitive but the game's aren't).
