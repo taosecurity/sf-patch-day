@@ -2,12 +2,50 @@
 
 ## 0.1.2 (2026-11-20)
 
-- `sf-patch-day` with no command, and `sf-patch-day drift` with no step, now print the help and then a
-  `RESULT: CANNOT CHECK` line on stderr, like every other command-line mistake (exit 3). `drift` with no step used
-  to stop with an "unexpected error".
-- The troubleshooting log now ends with the run's exit code ("exit code 3") instead of "done", and a log file
-  that couldn't be opened gets no last line.
-- A test checks that a `--json` run doesn't change the output of a later run in the same process.
+### What's new
+
+This is a small fix release. sf-patch-day tells you, after a Starfield update, which of your SFSE plugins still load and what each one waits for, and it tells mod authors whether the update changed anything their mod relies on. In 0.1.2, a command typed without its step now gets the help and a clear RESULT line instead of an unexpected error, and the troubleshooting log ends with the run's exit code.
+
+### Example
+
+    > .\sf-patch-day.cmd drift
+    usage: sf-patch-day drift [-h] step ...
+
+    positional arguments:
+      step
+        init      write a starting mods file from your mod's plugin
+        snapshot  write a baseline from the installed masters
+        check     compare the installed masters with the baseline
+
+    options:
+      -h, --help  show this help message and exit
+    RESULT: CANNOT CHECK: no drift step given. Fix: run sf-patch-day drift init, snapshot or check (see the help above).
+
+    > .\sf-patch-day.cmd dlls
+    sf-patch-day 0.1.2 dlls
+    Game version: 1.16.244 (read from C:\Program Files (x86)\Steam\steamapps\common\Starfield\Starfield.exe)
+    SFSE: 0.2.21 for this game version found (sfse_1_16_244.dll)
+    Address Library: versionlib-1-16-244-0.bin found (C:\Program Files (x86)\Steam\steamapps\common\Starfield\Data\SFSE\Plugins)
+
+    MAY FAIL               NewModA.dll
+        'NewModA' by AuthorA, plugin version 110; signature scans; no game structures
+        why: version independent by signature scans
+        what to do: SFSE loads it; it works only if the code it searches for is unchanged. Test it, or check its page
+    ...
+
+    RESULT: some plugins wait for an update or need testing (may fail: 3, works: 12)
+
+The `dlls` run is on a real Steam install, with mod and author names changed and the output shortened.
+
+### Fixes
+
+- `sf-patch-day` with no command, and `sf-patch-day drift` with no step, now print the help and then a `RESULT: CANNOT CHECK` line on stderr, like every other command-line mistake (exit 3). Before, `drift` with no step stopped with an "unexpected error".
+- The troubleshooting log now ends with the run's exit code ("exit code 3") instead of "done". A log file that couldn't be opened gets no last line.
+- A new test checks that a `--json` run doesn't change the output of a later run in the same process.
+
+### Download
+
+Download `sf-patch-day-0.1.2.zip` and its `.sha256` file below, unzip it anywhere and follow the Install steps in the README. It needs Python 3.9 or newer and nothing else.
 
 ## 0.1.1 (2026-11-20)
 
