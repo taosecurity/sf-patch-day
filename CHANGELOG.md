@@ -5,8 +5,10 @@
 Small fixes to the case-insensitive file name lookup added in 0.1.0 (used on Linux and Proton, where file names
 are case-sensitive but the game's aren't).
 
-- When several files in a folder differ only in case, `--verbose` now shows a WARNING that names them and says the
-  game may load another copy than the one checked.
+- When several files in a folder differ only in case, a WARNING names them and says the game may load another copy
+  than the one checked. It shows in the normal output (once per file), and `drift check` counts it as a NOTE
+  (exit 1).
+- A plugin given as a bare file name (run from its own folder) has its masters looked for in the current folder.
 - A folder that can't be listed is logged and tried again on the next lookup, instead of being skipped for the
   rest of the run.
 - A folder given two ways (a trailing slash, another case on Windows) is listed once.
