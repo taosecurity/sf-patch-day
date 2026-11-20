@@ -488,8 +488,11 @@ class TestDriftFunctions(Temp):
             json.dump({"masters": {"TestMaster.esm": {"ba2": "TestMaster - Main.ba2", "records": [], "functions": {
                 "Scripts/SfPexToolsTest/Alpha.pex": ["AddMission", "Score", "trycount", "NoSuchFunction"],
                 "scripts/SfPexToolsTest/Gone.pex": ["Nothing"]}}}}, f)
-        self.assertEqual(run("drift", "snapshot", "--mods", mods, "-o", base, "--data", data,
-                             "--pex-tools", TOOLS.folder)[0], 0)
+        code, out = run("drift", "snapshot", "--mods", mods, "-o", base, "--data", data, "--pex-tools", TOOLS.folder)
+        self.assertEqual(code, 0, out)
+        self.assertIn('scripts not found (check the path and the "ba2" archive name): '
+                      'scripts/SfPexToolsTest/Gone.pex', out)
+        self.assertIn("function NoSuchFunction()", out)  # a likely typo, said at snapshot time
         with open(base, encoding="utf-8") as f:
             b = json.load(f)
         funcs = b["masters"]["TestMaster.esm"]["functions"]

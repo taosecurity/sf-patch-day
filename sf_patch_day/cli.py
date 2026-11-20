@@ -234,7 +234,8 @@ def cmd_drift(args):
                 f"{': ' + ', '.join(missing) if missing else ''}), highest own FormID {e['max_own_id']}, probe "
                 f"{e['probe_id']}"
                 + (f", {sum(len(v or {}) for v in e['functions'].values())} function(s)" if e.get("functions") else "")
-                + (f", scripts not found (check the path): {', '.join(gone)}" if gone else "")
+                + (f", scripts not found (check the path and the \"ba2\" archive name): {', '.join(gone)}"
+                   if gone else "")
                 + (f"; function checks skipped: {e['functions_skipped']}" if e.get("functions_skipped") else ""))
             for warning in drift.not_found(mods["masters"][name], e):
                 say(f"  not found (check the name): {warning}")
