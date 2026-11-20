@@ -290,16 +290,21 @@ def say_warnings(always=False):
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    if not args.cmd:
-        build_parser().print_help()
+    # A missing command or drift step is a command-line mistake like the others: the help, then the RESULT line
+    # on stderr, exit 3. (The bare "drift" command has no --verbose or --log, so this comes before the log.)
+    if not args.cmd or (args.cmd == "drift" and not args.drift_cmd):
+        try:
+            build_parser().parse_args(["drift", "--help"] if args.cmd else ["--help"])
+        except SystemExit:
+            pass
         sys.stdout.flush()  # the help first, so "see the help above" holds in a terminal
-        # Like every other command-line mistake: the RESULT line on stderr, exit 3.
-        print("RESULT: CANNOT CHECK: no command given. Fix: run sf-patch-day dlls, drift or fingerprint "
-              "(see the help above).", file=sys.stderr)
+        what = ("no drift step given. Fix: run sf-patch-day drift init, snapshot or check" if args.cmd else
+                "no command given. Fix: run sf-patch-day dlls, drift or fingerprint")
+        print(f"RESULT: CANNOT CHECK: {what} (see the help above).", file=sys.stderr)
         return CANNOT
     plugin_module.clear_cache()
     _JSON[0] = bool(getattr(args, "json", False))
-    log_open = False
+    log_open, code = False, CANNOT
     try:  # everything after this point ends in the finally below: the log closed and --json reset
         err = log.setup(args.verbose, args.log)
         if err:
@@ -307,7 +312,8 @@ def main(argv=None):
         log_open = True
         log.info("start", f"sf-patch-day {VERSION}, Python {sys.version.split()[0]}, {sys.platform}, "
                           f"args {argv or sys.argv[1:]}")
-        return {"dlls": cmd_dlls, "drift": cmd_drift, "fingerprint": cmd_fingerprint}[args.cmd](args)
+        code = {"dlls": cmd_dlls, "drift": cmd_drift, "fingerprint": cmd_fingerprint}[args.cmd](args)
+        return code
     except drift.DriftError as e:
         return fail(str(e))
     except KeyboardInterrupt:
@@ -317,7 +323,7 @@ def main(argv=None):
         return fail(f"unexpected error ({type(e).__name__}: {e}). Run again with --verbose and report the log at "
                     f"https://github.com/taosecurity/sf-patch-day/issues")
     finally:
-        if log_open:  # a log that never opened gets no "done" line (a stopped run isn't done)
-            log.info("end", "done")
+        if log_open:  # the last log line says how the run ended (a log that never opened gets none)
+            log.info("end", f"exit code {code}")
         log.close()
         _JSON[0] = False  # never carried into a later run in the same process

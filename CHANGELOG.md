@@ -2,9 +2,11 @@
 
 ## 0.1.2 (not yet released)
 
-- `sf-patch-day` with no command now ends with a `RESULT: CANNOT CHECK` line on stderr after the help, like every
-  other command-line mistake (exit 3, as before).
-- When the `--log` file can't be opened, the `--verbose` log no longer ends with "done" for a run that stopped.
+- `sf-patch-day` with no command, and `sf-patch-day drift` with no step, now print the help and then a
+  `RESULT: CANNOT CHECK` line on stderr, like every other command-line mistake (exit 3). `drift` with no step used
+  to stop with an "unexpected error".
+- The troubleshooting log now ends with the run's exit code ("exit code 3") instead of "done", and a log file
+  that couldn't be opened gets no last line.
 - A test checks that a `--json` run doesn't change the output of a later run in the same process.
 
 ## 0.1.1 (2026-11-20)

@@ -584,7 +584,17 @@ class TestDrift(Temp):
                                  "--log", self.p("no-such-folder", "x.log"))
         self.assertEqual(code, 3)
         self.assertIn("can't write the log file", out)
-        self.assertNotIn("[end] done", err)  # a stopped run isn't "done"
+        self.assertNotIn("[end]", err)  # the log never opened, so it has no last line
+        # drift without a step: help and a RESULT line on stderr, not an "unexpected error".
+        code, out, err = run_err("drift")
+        self.assertEqual(code, 3)
+        self.assertIn("usage:", out)
+        self.assertIn("RESULT: CANNOT CHECK: no drift step given", err)
+        self.assertNotIn("unexpected error", out + err)
+        # A run that stops on an error ends its log with that exit code, not "done".
+        code, out, err = run_err("fingerprint", "x.esm", "--verbose", "--data", self.p("nowhere"))
+        self.assertEqual(code, 3)
+        self.assertIn("[end] exit code 3", err)
 
     def test_result_wording(self):
         self.assertEqual(drift.result([(drift.OK, "x")])[0], 0)
