@@ -16,7 +16,7 @@ import os
 import struct
 
 from . import VERSION, log
-from .plugin import Plugin, PluginError, PluginReadError, clear_cache, find_plugin, subrecords
+from .plugin import Plugin, PluginError, PluginReadError, check_copies, clear_cache, find_plugin, subrecords
 
 
 class DriftError(Exception):
@@ -362,13 +362,14 @@ def result(lines):
     levels = {lv for lv, _ in lines}
     if ACTION in levels:
         return 2, "RESULT: ACTION NEEDED: rebuild the mods named above (exit 2)"
+    also = "; also see the WARN line about copies of a file" if WARN in levels else ""
     if SKIP in levels:
-        return 1, "RESULT: no rebuild found, but some checks were skipped (see SKIP above; exit 1)"
-    if WARN in levels and NOTE not in levels:
-        return 1, "RESULT: no change found, but see the WARNING above (exit 1)"
+        return 1, f"RESULT: no rebuild found, but some checks were skipped (see SKIP above{also}; exit 1)"
     if NOTE in levels:
         return 1, ("RESULT: no rebuild needed, but see the NOTE lines above (a master changed in a way your mod "
-                   "doesn't use, or a name to check; exit 1)")
+                   f"doesn't use, or a name to check{also}; exit 1)")
+    if WARN in levels:
+        return 1, "RESULT: no change found, but see the WARN line above about copies of a file (exit 1)"
     return 0, "RESULT: no change (exit 0)"
 
 
@@ -376,6 +377,7 @@ def result(lines):
 def init(mod_path, dirs):
     """(mods dict, notes) listing every master record the mod overrides, as copied records."""
     clear_cache()
+    check_copies(mod_path)  # before reading it: a second copy may explain a failure
     try:
         with Plugin(mod_path, dirs) as p:
             overrides = p.overrides()

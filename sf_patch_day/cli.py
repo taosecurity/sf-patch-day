@@ -88,6 +88,7 @@ def say(line=""):
 
 
 def fail(msg):
+    say_warnings()  # a case-copy warning found before the failure may explain it
     say(f"RESULT: CANNOT CHECK: {msg}")
     log.info("error", msg)
     return CANNOT
@@ -203,7 +204,6 @@ def cmd_drift(args):
     if args.drift_cmd == "init":
         refuse_game_folder(args.out, data)
         mods, notes = drift.init(args.plugin, dirs)
-        plugin_module.check_copies(args.plugin)  # the mod's own plugin, too
         write_json(args.out, mods, force=args.force)
         n = sum(len(s["records"]) for s in mods["masters"].values())
         say(f"wrote {args.out}: {n} overridden record(s) in {len(mods['masters'])} master(s)")
@@ -276,13 +276,19 @@ def cmd_fingerprint(args):
     return 0
 
 
+_JSON = [False]  # --json: the report is JSON only, so warnings go into it (drift check) or are left to the log
+
+
 def say_warnings():
+    if _JSON[0]:
+        return
     for w in plugin_module.warnings():
         say(f"WARNING: {w}")
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    _JSON[0] = bool(getattr(args, "json", False))
     if not args.cmd:
         build_parser().print_help()
         return CANNOT
@@ -294,7 +300,6 @@ def main(argv=None):
     try:
         return {"dlls": cmd_dlls, "drift": cmd_drift, "fingerprint": cmd_fingerprint}[args.cmd](args)
     except drift.DriftError as e:
-        say_warnings()  # a case-copy warning found before the failure may explain it
         return fail(str(e))
     except KeyboardInterrupt:
         return fail("stopped (Ctrl+C)")

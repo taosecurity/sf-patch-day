@@ -530,9 +530,11 @@ class TestDrift(Temp):
         self.assertEqual(drift.result([(drift.OK, "x")])[0], 0)
         code, res = drift.result([(drift.OK, "x"), (drift.WARN, "copies")])
         self.assertEqual(code, 1)
-        self.assertIn("no change found, but see the WARNING", res)  # nothing changed: it mustn't say so
+        self.assertIn("no change found, but see the WARN line", res)  # nothing changed: it mustn't say so
         code, res = drift.result([(drift.NOTE, "x"), (drift.WARN, "copies")])
         self.assertIn("NOTE lines", res)
+        self.assertIn("also see the WARN line", res)  # the RESULT line alone tells the whole story
+        self.assertIn("also see the WARN line", drift.result([(drift.SKIP, "x"), (drift.WARN, "copies")])[1])
         self.assertEqual(drift.result([(drift.ACTION, "x"), (drift.WARN, "copies")])[0], 2)
 
     def test_names_listed_twice(self):
