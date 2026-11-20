@@ -88,8 +88,8 @@ def find_plugin(name, dirs):
         matches = sorted(f for f in _folder_index(folder).get(want, []) if os.path.isfile(os.path.join(folder, f)))
         if matches:
             _warn_copies(folder, name)
-            if (folder, want) not in _USED:
-                _USED.add((folder, want))
+            if (os.path.normcase(folder), want) not in _USED:
+                _USED.add((os.path.normcase(folder), want))
                 log.info("plugin", f"{name}: using {os.path.join(folder, matches[0])} (the name differs only in case)")
             return os.path.join(folder, matches[0])
     return None
@@ -100,6 +100,7 @@ def find_plugin(name, dirs):
 # program that calls find_plugin() directly should call clear_cache() when the folders may have changed.
 _INDEX = {}
 _USED = set()
+_UNLISTED = set()
 WARNINGS = []
 
 
@@ -107,7 +108,13 @@ def clear_cache():
     """Forget the folder listings and warnings (each command starts with a fresh look at the folders)."""
     _INDEX.clear()
     _USED.clear()
+    _UNLISTED.clear()
     WARNINGS.clear()
+
+
+def check_copies(path):
+    """Warn when the folder of a plugin given by its path holds other files whose names differ only in case."""
+    _warn_copies(os.path.abspath(os.path.dirname(path) or "."), os.path.basename(path))
 
 
 def _warn_copies(folder, name):
@@ -115,11 +122,12 @@ def _warn_copies(folder, name):
     load a different one than the tool reads. Said once per file per run, in WARNINGS (the command prints them) and
     the log."""
     copies = sorted(f for f in _folder_index(folder).get(name.lower(), []) if os.path.isfile(os.path.join(folder, f)))
-    if len(copies) < 2 or any(w[0] == (folder, name.lower()) for w in WARNINGS):
+    key = (os.path.normcase(folder), name.lower())
+    if len(copies) < 2 or any(w[0] == key for w in WARNINGS):
         return
     text = (f"{folder} holds {len(copies)} files whose names differ only in case ({', '.join(copies)}); the game "
             f"may load a different one than the one checked. Remove the extra copies.")
-    WARNINGS.append(((folder, name.lower()), text))
+    WARNINGS.append((key, text))
     log.info("plugin", f"WARNING: {text}")
 
 
@@ -129,7 +137,7 @@ def warnings():
 
 def _folder_index(folder):
     """{lowercase file name: [names as stored]} for a folder (an absolute path). A listing that fails isn't kept,
-    so the next lookup tries again."""
+    so the next lookup tries again; the failure is logged once per folder."""
     key = os.path.normcase(folder)  # the same folder written two ways is listed once
     if key not in _INDEX:
         idx = {}
@@ -137,7 +145,9 @@ def _folder_index(folder):
             for f in os.listdir(folder):
                 idx.setdefault(f.lower(), []).append(f)
         except OSError as e:
-            log.info("plugin", f"can't list {folder} for the case-insensitive lookup: {e.strerror or e}")
+            if key not in _UNLISTED:
+                _UNLISTED.add(key)
+                log.info("plugin", f"can't list {folder} for the case-insensitive lookup: {e.strerror or e}")
             return idx
         _INDEX[key] = idx
     return _INDEX[key]

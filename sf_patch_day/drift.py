@@ -229,7 +229,7 @@ def take(mods, dirs, tools=None, tools_msg=""):
 
 
 # ---- comparing ---------------------------------------------------------------------------------------------------
-ACTION, NOTE, SKIP, OK = "ACTION", "NOTE", "SKIP", "OK"
+ACTION, NOTE, SKIP, WARN, OK = "ACTION", "NOTE", "SKIP", "WARN", "OK"
 RESNAPSHOT = "after you next rebuild your mod, take a new baseline with snapshot --force"
 
 
@@ -364,8 +364,11 @@ def result(lines):
         return 2, "RESULT: ACTION NEEDED: rebuild the mods named above (exit 2)"
     if SKIP in levels:
         return 1, "RESULT: no rebuild found, but some checks were skipped (see SKIP above; exit 1)"
+    if WARN in levels and NOTE not in levels:
+        return 1, "RESULT: no change found, but see the WARNING above (exit 1)"
     if NOTE in levels:
-        return 1, "RESULT: a master changed, but nothing your mod uses (no rebuild; worth a look; exit 1)"
+        return 1, ("RESULT: no rebuild needed, but see the NOTE lines above (a master changed in a way your mod "
+                   "doesn't use, or a name to check; exit 1)")
     return 0, "RESULT: no change (exit 0)"
 
 

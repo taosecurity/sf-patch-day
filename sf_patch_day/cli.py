@@ -203,6 +203,7 @@ def cmd_drift(args):
     if args.drift_cmd == "init":
         refuse_game_folder(args.out, data)
         mods, notes = drift.init(args.plugin, dirs)
+        plugin_module.check_copies(args.plugin)  # the mod's own plugin, too
         write_json(args.out, mods, force=args.force)
         n = sum(len(s["records"]) for s in mods["masters"].values())
         say(f"wrote {args.out}: {n} overridden record(s) in {len(mods['masters'])} master(s)")
@@ -249,7 +250,7 @@ def cmd_drift(args):
         return fail(f"{args.baseline} isn't an sf-patch-day baseline. Fix: run drift snapshot to make one.")
     lines = drift.compare(base, now, mods)
     # Several copies that differ only in case: the check may describe a file the game doesn't load.
-    lines += [(drift.NOTE, f"WARNING: {w}") for w in plugin_module.warnings()]
+    lines += [(drift.WARN, w) for w in plugin_module.warnings()]
     code, res = drift.result(lines)
     if args.json:
         say(json.dumps({"findings": [{"level": lv, "text": t.strip()} for lv, t in lines], "exit": code}, indent=1))
@@ -263,6 +264,7 @@ def cmd_drift(args):
 def cmd_fingerprint(args):
     dirs, _ = data_dirs(args) if (args.data or args.plugin_dir or not os.path.isfile(args.plugin)) else ([], None)
     path = args.plugin if os.path.isfile(args.plugin) else drift.find_file(args.plugin, dirs, "Plugin")
+    plugin_module.check_copies(path)
     try:
         with Plugin(path, dirs) as p:
             probe, max_own = p.probe_ids()
@@ -292,6 +294,7 @@ def main(argv=None):
     try:
         return {"dlls": cmd_dlls, "drift": cmd_drift, "fingerprint": cmd_fingerprint}[args.cmd](args)
     except drift.DriftError as e:
+        say_warnings()  # a case-copy warning found before the failure may explain it
         return fail(str(e))
     except KeyboardInterrupt:
         return fail("stopped (Ctrl+C)")

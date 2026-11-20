@@ -521,10 +521,19 @@ class TestDrift(Temp):
             code, out = run("fingerprint", "Mod.esm", "--log", logf)
         finally:
             os.chdir(here)
+            plugin_module.clear_cache()
         self.assertEqual(code, 0, out)
         with open(logf, encoding="utf-8") as f:
             self.assertNotIn("can't list", f.read())
-        plugin_module.clear_cache()
+
+    def test_result_wording(self):
+        self.assertEqual(drift.result([(drift.OK, "x")])[0], 0)
+        code, res = drift.result([(drift.OK, "x"), (drift.WARN, "copies")])
+        self.assertEqual(code, 1)
+        self.assertIn("no change found, but see the WARNING", res)  # nothing changed: it mustn't say so
+        code, res = drift.result([(drift.NOTE, "x"), (drift.WARN, "copies")])
+        self.assertIn("NOTE lines", res)
+        self.assertEqual(drift.result([(drift.ACTION, "x"), (drift.WARN, "copies")])[0], 2)
 
     def test_names_listed_twice(self):
         with open(self.mods, "w", encoding="utf-8") as f:

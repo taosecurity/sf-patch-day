@@ -113,7 +113,10 @@ sf-patch-day drift check --mods mods.json --baseline baseline.json    3. after e
 3. `check` compares the installed masters with the baseline:
 
    - `OK`: the master file is unchanged.
-   - `NOTE`: the master changed, but nothing your mod uses (worth a look; no rebuild).
+   - `NOTE`: the master changed, but nothing your mod uses, or a name in your mods file to check (worth a look; no
+     rebuild).
+   - `WARN`: a folder holds several files whose names differ only in case (Linux and Proton), so the game may load
+     a different copy than the one checked. Remove the extra copies.
    - `ACTION`: something your mod uses changed: a copied record changed, a record or quest stage is gone, a FormID
      moved, or a script function is gone or takes a different number of arguments. Rebuild, and retest.
    - `SKIP`: a check couldn't run (function checks without sf-pex-tools).
@@ -192,7 +195,7 @@ Mod managers keep mods outside the game folder until they deploy them:
 | Code | dlls | drift check |
 |---|---|---|
 | 0 | Every plugin checked works. | No change. |
-| 1 | Some plugins need Address Library, may fail, or need a newer SFSE, or SFSE for this version is missing. | A master changed, but nothing your mod uses; or a check was skipped. |
+| 1 | Some plugins need Address Library, may fail, or need a newer SFSE, or SFSE for this version is missing. | A master changed, but nothing your mod uses; a name to check; a check was skipped; or a WARN about copies of a file. |
 | 2 | At least one plugin is locked to other game versions, or the install is Game Pass (SFSE doesn't run there). | Rebuild: something your mod uses changed. |
 | 3 | A file couldn't be read, or the command was wrong. | A file couldn't be read, or the command was wrong. |
 

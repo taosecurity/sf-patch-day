@@ -70,7 +70,7 @@ author must add quest stages and script functions by hand; init only finds overr
   write inside the game folder. Nothing else is written. Never rerun `snapshot --force` in place of `check` after
   an update: that replaces the baseline the check needs.
 - Exit codes: dlls 0 all work, 1 some need Address Library / may fail / need newer SFSE / SFSE missing, 2 some
-  locked or a Game Pass install, 3 can't read or bad command. drift check 0 no change, 1 changed but unused or a check skipped,
+  locked or a Game Pass install, 3 can't read or bad command. drift check 0 no change, 1 changed but unused, a name to check, a check skipped or a WARN about copies of a file,
   2 rebuild, 3 can't read or bad command. init, snapshot and fingerprint: 0 done, 3 problem.
 - Log: `--verbose` writes it to stderr; `--log <file>` writes it to a file. Off unless asked.
 
