@@ -563,6 +563,28 @@ class TestDrift(Temp):
         self.assertEqual(code, 3, out)
         self.assertIn("can't write the log file", out)  # the early stop, in plain text
         self.assertFalse(cli._JSON[0])
+        # The next run without --json in the same process prints its text report, not JSON.
+        code, out = run("dlls", "--game-version", "1.16.300", self.p("nothing.dll"))
+        self.assertEqual(code, 3, out)
+        self.assertIn("RESULT:", out)
+        with self.assertRaises(ValueError):
+            json.loads(out)
+
+    def test_no_command_and_failed_log_setup(self):
+        def run_err(*argv):
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = cli.main(list(argv))
+            return code, out.getvalue(), err.getvalue()
+        code, out, err = run_err()
+        self.assertEqual(code, 3)
+        self.assertIn("usage:", out)  # the help
+        self.assertIn("RESULT: CANNOT CHECK: no command given", err)
+        code, out, err = run_err("dlls", "--verbose", "--game-version", "1.16.300",
+                                 "--log", self.p("no-such-folder", "x.log"))
+        self.assertEqual(code, 3)
+        self.assertIn("can't write the log file", out)
+        self.assertNotIn("[end] done", err)  # a stopped run isn't "done"
 
     def test_result_wording(self):
         self.assertEqual(drift.result([(drift.OK, "x")])[0], 0)

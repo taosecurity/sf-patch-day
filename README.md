@@ -49,10 +49,10 @@ For AI assistants: see [AGENTS.md](AGENTS.md) for step-by-step instructions.
    check it against the `.sha256` file next to it, and unzip it anywhere:
 
    ```
-   certutil -hashfile sf-patch-day-0.1.1.zip SHA256
+   certutil -hashfile sf-patch-day-0.1.2.zip SHA256
    ```
 
-   On Linux, use `sha256sum sf-patch-day-0.1.1.zip`.
+   On Linux, use `sha256sum sf-patch-day-0.1.2.zip`.
 3. Optional, for `drift` function checks only: download [sf-pex-tools 0.1.0](https://github.com/taosecurity/sf-pex-tools/releases)
    the same way and unzip it into a folder named `sf-pex-tools` next to the `sf-patch-day` folder (or point to it
    with `--pex-tools <folder>` or the `SF_PEX_TOOLS` environment variable).

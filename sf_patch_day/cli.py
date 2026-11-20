@@ -292,13 +292,19 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     if not args.cmd:
         build_parser().print_help()
+        sys.stdout.flush()  # the help first, so "see the help above" holds in a terminal
+        # Like every other command-line mistake: the RESULT line on stderr, exit 3.
+        print("RESULT: CANNOT CHECK: no command given. Fix: run sf-patch-day dlls, drift or fingerprint "
+              "(see the help above).", file=sys.stderr)
         return CANNOT
     plugin_module.clear_cache()
     _JSON[0] = bool(getattr(args, "json", False))
+    log_open = False
     try:  # everything after this point ends in the finally below: the log closed and --json reset
         err = log.setup(args.verbose, args.log)
         if err:
             return fail(err)
+        log_open = True
         log.info("start", f"sf-patch-day {VERSION}, Python {sys.version.split()[0]}, {sys.platform}, "
                           f"args {argv or sys.argv[1:]}")
         return {"dlls": cmd_dlls, "drift": cmd_drift, "fingerprint": cmd_fingerprint}[args.cmd](args)
@@ -311,6 +317,7 @@ def main(argv=None):
         return fail(f"unexpected error ({type(e).__name__}: {e}). Run again with --verbose and report the log at "
                     f"https://github.com/taosecurity/sf-patch-day/issues")
     finally:
-        log.info("end", "done")
+        if log_open:  # a log that never opened gets no "done" line (a stopped run isn't done)
+            log.info("end", "done")
         log.close()
         _JSON[0] = False  # never carried into a later run in the same process

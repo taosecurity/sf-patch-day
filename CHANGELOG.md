@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 (not yet released)
+
+- `sf-patch-day` with no command now ends with a `RESULT: CANNOT CHECK` line on stderr after the help, like every
+  other command-line mistake (exit 3, as before).
+- When the `--log` file can't be opened, the `--verbose` log no longer ends with "done" for a run that stopped.
+- A test checks that a `--json` run doesn't change the output of a later run in the same process.
+
 ## 0.1.1 (2026-11-20)
 
 Small fixes to the case-insensitive file name lookup added in 0.1.0 (used on Linux and Proton, where file names
