@@ -75,11 +75,18 @@ def id_mask(flags):
 
 
 def find_plugin(name, dirs):
-    """The first <dir>\\<name> that exists, or None."""
+    """The first <dir>\\<name> that exists, or None. The game ignores case in file names (on Linux too, through
+    Proton), so when the exact spelling isn't there, a file whose name differs only in case is used."""
     for d in dirs:
         p = os.path.join(d, name)
         if os.path.isfile(p):
             return p
+        try:
+            for f in os.listdir(d):
+                if f.lower() == name.lower() and os.path.isfile(os.path.join(d, f)):
+                    return os.path.join(d, f)
+        except OSError:
+            pass
     return None
 
 
