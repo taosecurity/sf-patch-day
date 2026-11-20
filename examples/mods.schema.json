@@ -1,0 +1,44 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "sf-patch-day mods file",
+ "description": "What a mod relies on in the master plugins it builds on, for sf-patch-day drift.",
+ "type": "object",
+ "required": ["masters"],
+ "properties": {
+  "mod": {"type": "string", "description": "Your mod's name, shown in the report."},
+  "about": {"type": "string", "description": "Free text."},
+  "masters": {
+   "type": "object",
+   "minProperties": 1,
+   "description": "One entry per master plugin file name (Starfield.esm, a DLC, a Creation or another mod).",
+   "propertyNames": {"pattern": "^[^\\\\/]+\\.(esm|esp|esl|ESM|ESP|ESL)$"},
+   "additionalProperties": {
+    "type": "object",
+    "properties": {
+     "used_by": {"type": "array", "items": {"type": "string"}, "description": "Your mods or parts that rely on this master."},
+     "ba2": {"type": "string", "description": "The archive holding the master's scripts (needed for functions)."},
+     "records": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": ["edid"],
+       "properties": {
+        "edid": {"type": "string", "description": "The record's Editor ID."},
+        "type": {"type": "string", "minLength": 4, "maxLength": 4, "description": "Record type, such as QUST. When every record has one, scanning is much faster."},
+        "copied": {"type": "boolean", "description": "true when your plugin ships a copy (override) of this record: any change means rebuild."},
+        "stages": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65535}, "description": "Quest stages your scripts set: a missing one means rebuild."},
+        "why": {"type": "string"},
+        "used_by": {"type": "string"}
+       }
+      }
+     },
+     "functions": {
+      "type": "object",
+      "description": "Script path inside the archive -> function names your scripts call by name.",
+      "additionalProperties": {"type": "array", "items": {"type": "string"}}
+     }
+    }
+   }
+  }
+ }
+}

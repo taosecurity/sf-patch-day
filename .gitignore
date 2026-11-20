@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+dist/
+build/
+sf-pex-tools-dep/
+.claude/

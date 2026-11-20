@@ -1,0 +1,18 @@
+{
+ "mod": "MyQuestTweaks.esm",
+ "about": "Made-up example. What MyQuestTweaks relies on in the masters it builds on. Run: sf-patch-day drift snapshot --mods mods.example.json -o baseline.json",
+ "masters": {
+  "ExampleCreation.esm": {
+   "used_by": ["MyQuestTweaks"],
+   "ba2": "ExampleCreation - Main.ba2",
+   "records": [
+    {"edid": "EC_StartConditions", "type": "CNDF", "copied": true, "why": "MyQuestTweaks ships a changed copy of these start conditions"},
+    {"edid": "EC_MainQuest01", "type": "QUST", "stages": [100, 200], "why": "our script calls SetStage(100) and SetStage(200)"},
+    {"edid": "EC_RewardGlobal", "type": "GLOB"}
+   ],
+   "functions": {
+    "scripts/ExampleCreation/EC_MainQuest01Script.pex": ["GiveReward", "SkipIntro"]
+   }
+  }
+ }
+}
