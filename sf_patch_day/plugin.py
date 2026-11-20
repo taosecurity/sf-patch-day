@@ -79,43 +79,65 @@ def find_plugin(name, dirs):
     Proton), so when the exact spelling isn't there, a file whose name differs only in case is used."""
     want = name.lower()
     for d in dirs:
+        folder = os.path.abspath(d or ".")  # "" (a bare file name's folder) means the current folder
         p = os.path.join(d, name)
         if os.path.isfile(p):
+            _warn_copies(folder, name)
             return p
         # Sorted, so the same file is picked on every run when several differ only in case.
-        matches = sorted(f for f in _folder_index(d).get(want, []) if os.path.isfile(os.path.join(d, f)))
+        matches = sorted(f for f in _folder_index(folder).get(want, []) if os.path.isfile(os.path.join(folder, f)))
         if matches:
-            if len(matches) > 1:
-                log.info("plugin", f"WARNING: {d} holds {len(matches)} files that differ only in case "
-                                   f"({', '.join(matches)}); using {matches[0]}, but the game may load another one. "
-                                   f"Remove the extra copies.")
-            log.info("plugin", f"{name}: using {os.path.join(d, matches[0])} (the name differs only in case)")
-            return os.path.join(d, matches[0])
+            _warn_copies(folder, name)
+            if (folder, want) not in _USED:
+                _USED.add((folder, want))
+                log.info("plugin", f"{name}: using {os.path.join(folder, matches[0])} (the name differs only in case)")
+            return os.path.join(folder, matches[0])
     return None
 
 
-# Folder listings for the case-insensitive lookup, so a folder is listed once per run. Each command (cli.main) and
-# each public entry point (drift.take, drift.init) starts with clear_cache(); a program that calls find_plugin()
-# directly should call clear_cache() when the folders may have changed.
+# Folder listings for the case-insensitive lookup, so a folder is listed once per run, and the warnings already
+# given. Each command (cli.main) and each public entry point (drift.take, drift.init) starts with clear_cache(); a
+# program that calls find_plugin() directly should call clear_cache() when the folders may have changed.
 _INDEX = {}
+_USED = set()
+WARNINGS = []
 
 
 def clear_cache():
-    """Forget the folder listings (each command starts with a fresh look at the folders)."""
+    """Forget the folder listings and warnings (each command starts with a fresh look at the folders)."""
     _INDEX.clear()
+    _USED.clear()
+    WARNINGS.clear()
 
 
-def _folder_index(d):
-    """{lowercase file name: [names as stored]} for a folder. A listing that fails isn't kept, so the next lookup
-    tries again."""
-    key = os.path.normcase(os.path.abspath(d))  # the same folder written two ways is listed once
+def _warn_copies(folder, name):
+    """When a folder holds several files whose names differ only in case, the game (through Proton on Linux) may
+    load a different one than the tool reads. Said once per file per run, in WARNINGS (the command prints them) and
+    the log."""
+    copies = sorted(f for f in _folder_index(folder).get(name.lower(), []) if os.path.isfile(os.path.join(folder, f)))
+    if len(copies) < 2 or any(w[0] == (folder, name.lower()) for w in WARNINGS):
+        return
+    text = (f"{folder} holds {len(copies)} files whose names differ only in case ({', '.join(copies)}); the game "
+            f"may load a different one than the one checked. Remove the extra copies.")
+    WARNINGS.append(((folder, name.lower()), text))
+    log.info("plugin", f"WARNING: {text}")
+
+
+def warnings():
+    return [text for _, text in WARNINGS]
+
+
+def _folder_index(folder):
+    """{lowercase file name: [names as stored]} for a folder (an absolute path). A listing that fails isn't kept,
+    so the next lookup tries again."""
+    key = os.path.normcase(folder)  # the same folder written two ways is listed once
     if key not in _INDEX:
         idx = {}
         try:
-            for f in os.listdir(d):
+            for f in os.listdir(folder):
                 idx.setdefault(f.lower(), []).append(f)
         except OSError as e:
-            log.info("plugin", f"can't list {d} for the case-insensitive lookup: {e.strerror or e}")
+            log.info("plugin", f"can't list {folder} for the case-insensitive lookup: {e.strerror or e}")
             return idx
         _INDEX[key] = idx
     return _INDEX[key]

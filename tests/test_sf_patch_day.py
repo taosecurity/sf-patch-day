@@ -460,10 +460,13 @@ class TestDrift(Temp):
     def test_case_fallback_on_a_case_sensitive_system(self):
         """Runs the fallback on any system: the file checks and the folder listing act as on Linux, where
         Foo.ESM and foo.ESM are two files and neither is Foo.esm."""
+        from unittest import mock
         from sf_patch_day import log, plugin as plugin_module
-        folder = self.p("CaseSensitive")
+        folder = os.path.abspath(self.p("CaseSensitive"))
         os.makedirs(folder)
-        stored = {"foo.ESM", "Foo.ESM"}
+        logf = self.p("case.log")
+        log.setup(False, logf)  # opened before the file functions are replaced
+        stored = {"foo.ESM", "Foo.ESM", "Bar.esm", "bar.ESM"}
         real_isfile, real_listdir = os.path.isfile, os.listdir
         fail_once = [True]
 
@@ -473,28 +476,55 @@ class TestDrift(Temp):
             return real_isfile(p)
 
         def listdir(d):
-            if os.path.normcase(d.rstrip("\\/")) == os.path.normcase(folder):
+            if os.path.normcase(os.path.abspath(d)) == os.path.normcase(folder):
                 if fail_once[0]:
                     fail_once[0] = False
                     raise PermissionError(13, "Access is denied", d)
                 return sorted(stored)
             return real_listdir(d)
-        logf = self.p("case.log")
-        os.path.isfile, os.listdir = isfile, listdir
+        key = os.path.normcase(folder)
         try:
-            log.setup(False, logf)
-            plugin_module.clear_cache()
-            self.assertIsNone(plugin_module.find_plugin("foo.esm", [folder]))  # the listing failed this once...
-            found = plugin_module.find_plugin("foo.esm", [folder + os.sep])     # ...and isn't remembered
-            self.assertEqual(os.path.basename(found), "Foo.ESM")                 # sorted: the same pick every run
+            with mock.patch.object(plugin_module.os.path, "isfile", isfile), \
+                    mock.patch.object(plugin_module.os, "listdir", listdir):
+                plugin_module.clear_cache()
+                self.assertIsNone(plugin_module.find_plugin("foo.esm", [folder]))  # the listing failed this once
+                self.assertNotIn(key, plugin_module._INDEX)                         # and the failure isn't kept
+                found = plugin_module.find_plugin("foo.esm", [folder + os.sep])     # the next lookup lists again
+                self.assertEqual(os.path.basename(found), "Foo.ESM")                 # sorted: same pick every run
+                self.assertIn(key, plugin_module._INDEX)
+                plugin_module.find_plugin("foo.esm", [folder])                      # said once, not twice
+                # An exact hit warns too when another copy differs only in case.
+                self.assertEqual(plugin_module.find_plugin("Bar.esm", [folder]), os.path.join(folder, "Bar.esm"))
+                warnings = plugin_module.warnings()
         finally:
-            os.path.isfile, os.listdir = real_isfile, real_listdir
+            plugin_module.clear_cache()
             log.close()
+        self.assertEqual(len(warnings), 2, warnings)
+        self.assertIn("foo.ESM", warnings[0])
+        self.assertIn("bar.ESM", warnings[1])
+        self.assertIn("may load a different one", warnings[1])
         with open(logf, encoding="utf-8") as f:
             text = f.read()
         self.assertIn("can't list", text)
-        self.assertIn("WARNING:", text)
-        self.assertIn("the game may load another one", text)
+        self.assertEqual(text.count("WARNING:"), 2, text)
+
+    def test_bare_plugin_name_uses_the_current_folder(self):
+        from sf_patch_day import plugin as plugin_module
+        folder = self.p("BareName")
+        # The master isn't there, so the lookup lists the plugin's own folder: for a bare name that is "", which
+        # must mean the current folder (listing "" fails).
+        write(os.path.join(folder, "Mod.esm"), mk.plugin(0x1, ["Starfield.esm"]))
+        logf = self.p("bare.log")
+        here = os.getcwd()
+        os.chdir(folder)
+        try:
+            code, out = run("fingerprint", "Mod.esm", "--log", logf)
+        finally:
+            os.chdir(here)
+        self.assertEqual(code, 0, out)
+        with open(logf, encoding="utf-8") as f:
+            self.assertNotIn("can't list", f.read())
+        plugin_module.clear_cache()
 
     def test_names_listed_twice(self):
         with open(self.mods, "w", encoding="utf-8") as f:

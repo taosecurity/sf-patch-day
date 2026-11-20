@@ -210,6 +210,7 @@ def cmd_drift(args):
             say(f"  {m}: {len(s['records'])} record(s)")
         for note in notes:
             say(f"note: {note}")
+        say_warnings()
         say("Next: add the quest stages your scripts set and the master script functions they call, then run "
             "drift snapshot.")
         return 0
@@ -240,12 +241,15 @@ def cmd_drift(args):
                 + (f"; function checks skipped: {e['functions_skipped']}" if e.get("functions_skipped") else ""))
             for warning in drift.not_found(mods["masters"][name], e):
                 say(f"  not found (check the name): {warning}")
+        say_warnings()
         say(f"wrote {args.out}")
         return 0
     base = load_json(args.baseline, "baseline")
     if not isinstance(base, dict) or not isinstance(base.get("masters"), dict):
         return fail(f"{args.baseline} isn't an sf-patch-day baseline. Fix: run drift snapshot to make one.")
     lines = drift.compare(base, now, mods)
+    # Several copies that differ only in case: the check may describe a file the game doesn't load.
+    lines += [(drift.NOTE, f"WARNING: {w}") for w in plugin_module.warnings()]
     code, res = drift.result(lines)
     if args.json:
         say(json.dumps({"findings": [{"level": lv, "text": t.strip()} for lv, t in lines], "exit": code}, indent=1))
@@ -266,7 +270,13 @@ def cmd_fingerprint(args):
         return fail(str(e))
     say(f"{os.path.basename(path)}: probe FormID {probe:06X} (highest own {'/'.join(sorted(PROBE_TYPES))} in its own "
         f"group), highest own FormID {max_own:06X} (over all records)")
+    say_warnings()
     return 0
+
+
+def say_warnings():
+    for w in plugin_module.warnings():
+        say(f"WARNING: {w}")
 
 
 def main(argv=None):
