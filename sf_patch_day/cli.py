@@ -88,8 +88,8 @@ def say(line=""):
 
 
 def fail(msg):
-    # A case-copy warning found before the failure may explain it. Shown with --json too: a failed run's output is
-    # plain text anyway.
+    # A case-copy warning found before the failure may explain it. Shown with --json too: a run that stops here
+    # never prints its JSON report, so its output is plain text anyway.
     say_warnings(always=True)
     say(f"RESULT: CANNOT CHECK: {msg}")
     log.info("error", msg)
@@ -290,18 +290,17 @@ def say_warnings(always=False):
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    _JSON[0] = bool(getattr(args, "json", False))
     if not args.cmd:
         build_parser().print_help()
         return CANNOT
     plugin_module.clear_cache()
-    err = log.setup(args.verbose, args.log)
-    if err:
-        code = fail(err)
-        _JSON[0] = False
-        return code
-    log.info("start", f"sf-patch-day {VERSION}, Python {sys.version.split()[0]}, {sys.platform}, args {argv or sys.argv[1:]}")
-    try:
+    _JSON[0] = bool(getattr(args, "json", False))
+    try:  # everything after this point ends in the finally below: the log closed and --json reset
+        err = log.setup(args.verbose, args.log)
+        if err:
+            return fail(err)
+        log.info("start", f"sf-patch-day {VERSION}, Python {sys.version.split()[0]}, {sys.platform}, "
+                          f"args {argv or sys.argv[1:]}")
         return {"dlls": cmd_dlls, "drift": cmd_drift, "fingerprint": cmd_fingerprint}[args.cmd](args)
     except drift.DriftError as e:
         return fail(str(e))

@@ -556,9 +556,12 @@ class TestDrift(Temp):
             self.assertEqual(code, 3, out)
             self.assertIn("WARNING:", out)
         # The --json setting never carries into a later run, also when a run stops early (an unwritable log).
-        run("dlls", "--json", "--game-version", "1.16.300", self.p("nothing.dll"))
+        code, out = run("dlls", "--json", "--game-version", "1.16.300", self.p("nothing.dll"))
+        self.assertEqual((code, json.loads(out)["exit"]), (3, 3))  # a JSON report that says exit 3
         self.assertFalse(cli._JSON[0])
-        run("dlls", "--json", "--game-version", "1.16.300", "--log", self.p("no-such-folder", "x.log"))
+        code, out = run("dlls", "--json", "--game-version", "1.16.300", "--log", self.p("no-such-folder", "x.log"))
+        self.assertEqual(code, 3, out)
+        self.assertIn("can't write the log file", out)  # the early stop, in plain text
         self.assertFalse(cli._JSON[0])
 
     def test_result_wording(self):

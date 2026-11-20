@@ -201,8 +201,11 @@ Mod managers keep mods outside the game folder until they deploy them:
 
 `drift init`, `drift snapshot` and `fingerprint` return 0 on success and 3 on a problem. The text reports of `dlls`
 and `drift check`, and every failed run, end with a `RESULT:` line; with `--json` a finished report is JSON only,
-with the exit code in its `exit` field, while a failed run (exit 3) prints plain text: any WARNING lines about
-copies of a file, then the `RESULT:` line. Scripts should rely on the exit code.
+with the exit code in its `exit` field (`dlls --json` can return such a report with exit 3, listing the files it
+couldn't read under `problems`). A run that stops before its report prints plain text instead, even with
+`--json`: any WARNING lines about copies of a file, then `RESULT: CANNOT CHECK` on stdout. A command-line mistake
+(an unknown option, a missing argument) prints its `RESULT: CANNOT CHECK` line on stderr. Scripts should rely on
+the exit code.
 
 ## Logs
 
