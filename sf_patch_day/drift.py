@@ -16,7 +16,7 @@ import os
 import struct
 
 from . import VERSION, log
-from .plugin import Plugin, PluginError, PluginReadError, find_plugin, subrecords
+from .plugin import Plugin, PluginError, PluginReadError, clear_cache, find_plugin, subrecords
 
 
 class DriftError(Exception):
@@ -175,6 +175,7 @@ def find_file(name, dirs, what):
 
 def take(mods, dirs, tools=None, tools_msg=""):
     """The baseline dict for the masters in the mods file, read from the first of `dirs` that holds each."""
+    clear_cache()  # a fresh look at the folders, also for callers that don't go through the command line
     snap = {"tool": f"sf-patch-day {VERSION}", "taken": datetime.date.today().isoformat(), "masters": {}}
     for name, spec in mods["masters"].items():
         path = find_file(name, dirs, "Master")
@@ -371,6 +372,7 @@ def result(lines):
 # ---- init: a starting mods file from a mod's own plugin ----------------------------------------------------------
 def init(mod_path, dirs):
     """(mods dict, notes) listing every master record the mod overrides, as copied records."""
+    clear_cache()
     try:
         with Plugin(mod_path, dirs) as p:
             overrides = p.overrides()

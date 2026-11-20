@@ -86,13 +86,17 @@ def find_plugin(name, dirs):
         matches = sorted(f for f in _folder_index(d).get(want, []) if os.path.isfile(os.path.join(d, f)))
         if matches:
             if len(matches) > 1:
-                log.info("plugin", f"{d}: {', '.join(matches)} all match {name} (the game would see one file); "
-                                   f"using {matches[0]}")
+                log.info("plugin", f"WARNING: {d} holds {len(matches)} files that differ only in case "
+                                   f"({', '.join(matches)}); using {matches[0]}, but the game may load another one. "
+                                   f"Remove the extra copies.")
             log.info("plugin", f"{name}: using {os.path.join(d, matches[0])} (the name differs only in case)")
             return os.path.join(d, matches[0])
     return None
 
 
+# Folder listings for the case-insensitive lookup, so a folder is listed once per run. Each command (cli.main) and
+# each public entry point (drift.take, drift.init) starts with clear_cache(); a program that calls find_plugin()
+# directly should call clear_cache() when the folders may have changed.
 _INDEX = {}
 
 
@@ -102,16 +106,19 @@ def clear_cache():
 
 
 def _folder_index(d):
-    """{lowercase file name: [names as stored]} for a folder, read once per run."""
-    if d not in _INDEX:
+    """{lowercase file name: [names as stored]} for a folder. A listing that fails isn't kept, so the next lookup
+    tries again."""
+    key = os.path.normcase(os.path.abspath(d))  # the same folder written two ways is listed once
+    if key not in _INDEX:
         idx = {}
         try:
             for f in os.listdir(d):
                 idx.setdefault(f.lower(), []).append(f)
-        except OSError:
-            pass
-        _INDEX[d] = idx
-    return _INDEX[d]
+        except OSError as e:
+            log.info("plugin", f"can't list {d} for the case-insensitive lookup: {e.strerror or e}")
+            return idx
+        _INDEX[key] = idx
+    return _INDEX[key]
 
 
 class Plugin:

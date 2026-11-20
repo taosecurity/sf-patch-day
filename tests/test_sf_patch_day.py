@@ -457,6 +457,45 @@ class TestDrift(Temp):
         self.assertEqual(plugin_module.find_plugin("Bar.esm", [folder]), exact)  # the exact name comes first
         self.assertIsNone(plugin_module.find_plugin("Missing.esm", [folder]))
 
+    def test_case_fallback_on_a_case_sensitive_system(self):
+        """Runs the fallback on any system: the file checks and the folder listing act as on Linux, where
+        Foo.ESM and foo.ESM are two files and neither is Foo.esm."""
+        from sf_patch_day import log, plugin as plugin_module
+        folder = self.p("CaseSensitive")
+        os.makedirs(folder)
+        stored = {"foo.ESM", "Foo.ESM"}
+        real_isfile, real_listdir = os.path.isfile, os.listdir
+        fail_once = [True]
+
+        def isfile(p):
+            if os.path.normcase(os.path.dirname(p)) == os.path.normcase(folder):
+                return os.path.basename(p) in stored
+            return real_isfile(p)
+
+        def listdir(d):
+            if os.path.normcase(d.rstrip("\\/")) == os.path.normcase(folder):
+                if fail_once[0]:
+                    fail_once[0] = False
+                    raise PermissionError(13, "Access is denied", d)
+                return sorted(stored)
+            return real_listdir(d)
+        logf = self.p("case.log")
+        os.path.isfile, os.listdir = isfile, listdir
+        try:
+            log.setup(False, logf)
+            plugin_module.clear_cache()
+            self.assertIsNone(plugin_module.find_plugin("foo.esm", [folder]))  # the listing failed this once...
+            found = plugin_module.find_plugin("foo.esm", [folder + os.sep])     # ...and isn't remembered
+            self.assertEqual(os.path.basename(found), "Foo.ESM")                 # sorted: the same pick every run
+        finally:
+            os.path.isfile, os.listdir = real_isfile, real_listdir
+            log.close()
+        with open(logf, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("can't list", text)
+        self.assertIn("WARNING:", text)
+        self.assertIn("the game may load another one", text)
+
     def test_names_listed_twice(self):
         with open(self.mods, "w", encoding="utf-8") as f:
             json.dump({"masters": {"TestMaster.esm": {"records": [{"edid": "TM_Quest"}, {"edid": "tm_quest"}]},
