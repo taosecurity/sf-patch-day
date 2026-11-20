@@ -526,6 +526,36 @@ class TestDrift(Temp):
         with open(logf, encoding="utf-8") as f:
             self.assertNotIn("can't list", f.read())
 
+    def test_failed_run_still_shows_the_copies_warning(self):
+        """A damaged plugin with a second copy that differs only in case (as on Linux): init and check fail, and
+        the warning that may explain it is shown, with --json too."""
+        from unittest import mock
+        from sf_patch_day import plugin as plugin_module
+        folder = os.path.abspath(self.p("Copies"))
+        damaged = os.path.join(folder, "Mod.esm")
+        write(damaged, b"damaged")
+        real_isfile = os.path.isfile
+
+        def index(f):
+            return {"mod.esm": ["Mod.esm", "mod.ESM"]} if os.path.normcase(f) == os.path.normcase(folder) else {}
+
+        def isfile(p):
+            if os.path.normcase(os.path.dirname(p)) == os.path.normcase(folder):
+                return os.path.basename(p) in ("Mod.esm", "mod.ESM")
+            return real_isfile(p)
+        with mock.patch.object(plugin_module, "_folder_index", index), \
+                mock.patch.object(plugin_module.os.path, "isfile", isfile):
+            code, out = run("drift", "init", damaged, "-o", self.p("m.json"), "--data", self.data)
+            self.assertEqual(code, 3, out)
+            self.assertIn("WARNING:", out)
+            self.assertIn("RESULT: CANNOT CHECK", out)
+            with open(self.mods, "w", encoding="utf-8") as f:
+                json.dump({"masters": {"Mod.esm": {"records": []}}}, f)
+            code, out = run("drift", "check", "--mods", self.mods, "--baseline", self.p("none.json"),
+                            "--data", folder, "--json")
+            self.assertEqual(code, 3, out)
+            self.assertIn("WARNING:", out)
+
     def test_result_wording(self):
         self.assertEqual(drift.result([(drift.OK, "x")])[0], 0)
         code, res = drift.result([(drift.OK, "x"), (drift.WARN, "copies")])

@@ -88,7 +88,9 @@ def say(line=""):
 
 
 def fail(msg):
-    say_warnings()  # a case-copy warning found before the failure may explain it
+    # A case-copy warning found before the failure may explain it. Shown with --json too: a failed run's output is
+    # plain text anyway.
+    say_warnings(always=True)
     say(f"RESULT: CANNOT CHECK: {msg}")
     log.info("error", msg)
     return CANNOT
@@ -279,8 +281,8 @@ def cmd_fingerprint(args):
 _JSON = [False]  # --json: the report is JSON only, so warnings go into it (drift check) or are left to the log
 
 
-def say_warnings():
-    if _JSON[0]:
+def say_warnings(always=False):
+    if _JSON[0] and not always:
         return
     for w in plugin_module.warnings():
         say(f"WARNING: {w}")
@@ -310,3 +312,4 @@ def main(argv=None):
     finally:
         log.info("end", "done")
         log.close()
+        _JSON[0] = False  # never carried into a later run in the same process
