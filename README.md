@@ -195,8 +195,9 @@ sf-patch-day takes a baseline and, after an update, tells you whether any of the
 
 1. `init` lists every master record your plugin overrides (ships a changed copy of). Any change to those means
    rebuild. It can't see what your scripts use, so add those by hand (see [The mods file](#the-mods-file)). When
-   init finds nothing it can watch by name (no overridden master records with Editor IDs), it writes a mods file
-   with nothing in it yet and says so: add at least one entry before you run `snapshot`.
+   init finds nothing it can watch by name (no overridden master records with Editor IDs, or none whose master the
+   plugin lists, which it notes as possibly damaged or unusual), it writes a mods file with nothing in it yet and
+   says so: add at least one entry before you run `snapshot`.
 2. `snapshot` records facts about each listed record: its FormID, type, a hash of its contents, its quest stages
    and condition count, and the argument count of each listed script function. Take it when your mod is built and
    working. Keep `mods.json` and `baseline.json` with your mod's source.
