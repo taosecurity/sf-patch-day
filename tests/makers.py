@@ -133,8 +133,13 @@ def _wstr(text):
 
 
 def vmad_value(ptype, value):
-    """A VMAD property value: 1 Object (FormID), 2 String, 3 Int, 4 Float, 5 Bool, 7 Struct ([(name, type, value)]),
-    11-15 arrays of those, 17 array of structs."""
+    """A VMAD property value: 1 Object (FormID), 2 String, 3 Int, 4 Float, 5 Bool, 6 Variable (no bytes, as xEdit
+    reads it), 7 Struct ([(name, type, value)]), 11-15 arrays of those, 16 array of Variable (a count only), 17 array
+    of structs."""
+    if ptype == 6:
+        return b""
+    if ptype == 16:
+        return struct.pack("<I", value)
     if ptype == 1:
         return struct.pack("<HhI", 0, -1, value)
     if ptype == 2:
@@ -158,12 +163,30 @@ def vmad_property(name, ptype, value):
     return _wstr(name) + bytes([ptype, 1]) + vmad_value(ptype, value)
 
 
+def script_entry(name, props):
+    return _wstr(name) + b"\x00" + struct.pack("<H", len(props)) + b"".join(vmad_property(*p) for p in props)
+
+
+def quest_tail(script="", props=(), fragments=(), aliases=()):
+    """The part of a quest's VMAD after its scripts, laid out as xEdit's Starfield definitions read it: the fragment
+    script (with its properties), fragments [(stage, script name, function name)] and aliases
+    [(alias id, [(script name, [(property, type, value)])])]."""
+    out = b"\x03" + struct.pack("<H", len(fragments)) + (script_entry(script, props) if script else _wstr(""))
+    for stage, sname, fname in fragments:
+        out += struct.pack("<HhiB", stage, 0, 0, 0) + _wstr(sname) + _wstr(fname)
+    out += struct.pack("<H", len(aliases))
+    for alias, entries in aliases:
+        out += struct.pack("<HhI", 0, alias, 0) + struct.pack("<HHH", 6, 2, len(entries))
+        out += b"".join(script_entry(n, p) for n, p in entries)
+    return out
+
+
 def vmad(scripts, tail=b""):
-    """A VMAD field (version 6, object format 2): scripts = [(script name, [(property, type, value)])]. tail stands
-    in for the quest fragment data that follows the scripts in a quest's VMAD."""
+    """A VMAD field (version 6, object format 2): scripts = [(script name, [(property, type, value)])]. tail is the
+    data after the scripts (quest_tail() for a quest's fragment and alias scripts)."""
     out = struct.pack("<HHH", 6, 2, len(scripts))
     for name, props in scripts:
-        out += _wstr(name) + b"\x00" + struct.pack("<H", len(props)) + b"".join(vmad_property(*p) for p in props)
+        out += script_entry(name, props)
     return sub("VMAD", out + tail)
 
 

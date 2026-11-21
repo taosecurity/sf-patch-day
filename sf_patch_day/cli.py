@@ -215,14 +215,14 @@ def cmd_drift(args):
             return fail(tools_msg)
         mods, notes, summary = drift.init(args.plugin, dirs, tools, tools_msg)
         write_json(args.out, mods, force=args.force)
-        if tools is None:
+        scripts_read = tools is not None and summary["scripts"] is not None  # None: the script part failed
+        if not scripts_read:
             say(f"wrote {args.out}: {summary['records']} overridden record(s) in {len(mods['masters'])} master(s)")
         else:
             say(f"wrote {args.out}: {summary['records']} overridden record(s), {summary['functions']} master script "
                 f"function(s) your scripts call and {summary['staged']} master quest(s) they set stages on, in "
                 f"{len(mods['masters'])} master(s)")
-            if summary["scripts"] is not None:
-                say(f"  read {summary['scripts']} of your mod's own script(s) with {tools_msg}")
+            say(f"  read {summary['scripts']} of your mod's own script(s) with {tools_msg}")
         for m, s in mods["masters"].items():
             staged = sum(1 for r in s["records"] if r.get("stages"))
             nf = sum(len(v) for v in s.get("functions", {}).values())
@@ -234,6 +234,9 @@ def cmd_drift(args):
         if mods["masters"] and tools is None:
             say("Next: add the quest stages your scripts set and the master script functions they call (or run init "
                 "again with sf-pex-tools), then run drift snapshot.")
+        elif mods["masters"] and not scripts_read:
+            say("Next: add the quest stages your scripts set and the master script functions they call by hand (the "
+                "\"scripts not read\" note says why init couldn't), then run drift snapshot.")
         elif mods["masters"]:
             say("Next: check the file, add anything else your mod relies on, then run drift snapshot "
                 "(with sf-pex-tools, for the function checks).")

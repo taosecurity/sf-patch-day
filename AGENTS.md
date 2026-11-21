@@ -61,9 +61,11 @@ Options go after the command name.
 The mods file format is in README.md ("The mods file") and `examples/mods.schema.json`. `drift init` lists the
 master records the plugin overrides. With sf-pex-tools (found through `--pex-tools`, `SF_PEX_TOOLS` or a
 `sf-pex-tools` folder next to sf-patch-day's folder) it also reads the mod's compiled scripts: those the plugin
-attaches, the `.pex` files under `Scripts\` next to the plugin, and those in `<Mod> - <name>.ba2` archives next to
-it. It adds the master script functions they call (`ba2` and `functions`) and the master quests they set stages on
-(`records` with `stages`); README.md "What init finds in your scripts" lists what it can't see. Without
+names (attached, fragment and alias scripts), the `.pex` files under `Scripts\` next to the plugin, and those in
+`<Mod> - <name>.ba2` archives next to it (the PC archive only, when `_xbox` or `_ps5` copies sit beside it). Run
+it on the plugin in the mod's own folder: in the shared Data folder only loose scripts in the mod's own namespace,
+or named by its plugin, count as the mod's. It adds the master script functions they call (`ba2` and
+`functions`) and the master quests they set stages on (`records` with `stages`); README.md "What init finds in your scripts" lists what it can't see. Without
 sf-pex-tools, init prints `note: scripts not read: ...` and the author adds those by hand. A `note:` line saying a
 call passes a different number of arguments than the installed master takes, or calls a function no master defines
 now, means the mod was built against another game version. A `--pex-tools` folder that doesn't hold sf-pex-tools
@@ -97,4 +99,5 @@ is added.
 - Doesn't judge DLLs without SFSE version data (ASI plugins, proxy DLLs).
 - SFSE doesn't support the Game Pass version of Starfield; dlls says so on Game Pass installs.
 - drift sees only what the mods file lists. init reads the mod's scripts only with sf-pex-tools, and can't see
-  quests or stage numbers worked out while the game runs, or quest alias and fragment scripts.
+  quests or stage numbers worked out while the game runs, or calls made through another object's functions. A
+  mod's changed copy of a master script counts as the mod's own; the mod is never listed as its own master.

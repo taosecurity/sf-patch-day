@@ -28,11 +28,13 @@ The run is on a real Steam install, with a script-only mod of ours renamed MyMod
 
 ### How it works
 
-- init reads the scripts the plugin attaches to its records, the `.pex` files under `Scripts\` next to the plugin, and those in the mod's own `<Mod> - <name>.ba2` archives. The masters' scripts come from their own archives in the Data folder and `--plugin-dir` folders.
+- init reads the scripts the plugin names (attached scripts, and the fragment and alias scripts of quests, dialogue, scenes, packages, perks and terminal menus), the `.pex` files under `Scripts\` next to the plugin, and those in the mod's own `<Mod> - <name>.ba2` archives. When a Creations build folder also holds `_xbox` or `_ps5` archives, only the PC archive is read. The masters' scripts come from their own archives in the Data folder and `--plugin-dir` folders.
+- Which copy of a script counts follows the game: a loose file beats every archive, and a later archive beats an earlier one. A changed copy of a master script that your mod ships is your mod's own script, and your mod is never listed as its own master.
+- When the plugin is in the Data folder, `Data\Scripts` holds every mod's loose scripts. There a loose script counts as yours when its namespace is one your mod uses and no master uses, or, without a namespace or for a `Fragments:` script, when your plugin names it. A loose copy of a master script there gets a `note:` line.
 - Each master script function your scripts call is listed under the master script that defines it, with that master's archive in `ba2`. An inherited function goes under the parent script that defines it.
 - A `note:` line says when a call passes a different number of arguments than the installed master's function takes, or calls a function no master script defines now. Either means the mod was built against another game version.
 - Quests your scripts call `SetStage` or `SetCurrentStageID` on are listed with their stages when the quest is a script property your plugin fills. A quest your plugin overrides and attaches the script to counts too. Stages written in the script or filled as Int properties are listed, also when they are handed down through your script's own functions.
-- A stage number worked out while the game runs isn't listed, and the quest's `why` text says so. Quest alias and fragment scripts aren't read yet.
+- A stage number worked out while the game runs (or above 65535) isn't listed, and the quest's `why` text says so. README "What init finds in your scripts" lists the other limits.
 - The output is the same for the same mod and game files, and the file is valid against `examples/mods.schema.json`. The format of the mods file hasn't changed.
 
 ### Changes

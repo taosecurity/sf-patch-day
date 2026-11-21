@@ -292,11 +292,29 @@ is a made-up example, and [examples/mods.schema.json](examples/mods.schema.json)
 
 ### What init finds in your scripts
 
-With sf-pex-tools, `init` reads the scripts your plugin attaches to its records and the compiled scripts (`.pex`)
-your mod ships: loose ones under `Scripts\` next to the plugin, and the ones in its own archives
-(`MyMod - Main.ba2` and other `MyMod - <name>.ba2` files next to it). A loose script your scripts use that no
-master's archive holds counts as yours too. The masters' scripts come from their own archives (such as
-`Starfield - Misc.ba2`) in the Data folder and `--plugin-dir` folders. From the code it adds:
+With sf-pex-tools, `init` reads the scripts your plugin names (the scripts attached to its records, and the
+fragment and alias scripts of its quests, dialogue, scenes, packages, perks and terminal menus) and the compiled
+scripts (`.pex`) your mod ships: loose ones under `Scripts\` next to the plugin, and the ones in its own archives
+(`MyMod - Main.ba2` and other `MyMod - <name>.ba2` files next to it). When a Creations build folder holds both
+`MyMod - Main.ba2` and `MyMod - Main_xbox.ba2` (or `_ps5`), only the PC archive is read. The masters' scripts come
+from their own archives (such as `Starfield - Misc.ba2`) in the Data folder and `--plugin-dir` folders.
+
+Which copy of a script counts follows the game's rule: a loose file beats every archive, and a later archive beats
+an earlier one. So when your mod ships its own changed copy of a master's script (in its archive, or loose), that
+copy is your mod's own script, not the master's, and your mod is never listed as its own master.
+
+Where your plugin sits matters for loose scripts:
+
+- In its own folder (your source folder, or a mod manager's folder for this mod), every loose `.pex` under
+  `Scripts\` is your mod's.
+- In the game's Data folder (or a `--plugin-dir` folder), `Data\Scripts` holds every mod's loose scripts. There a
+  loose script counts as yours when its namespace (the part before the first `:`, such as `MyMod` in
+  `MyMod:QuestScript`) is one your plugin's scripts or your archive use and no master uses, or, for a script with
+  no namespace or a `Fragments:` script, when your plugin names it. A master installed loose is recognized by the
+  scripts its own records name. A loose copy of a master script there could be any mod's, so init reads the
+  master's archive copy and says so in a `note:` line.
+
+From the code it adds:
 
 - Each master script function your scripts call, under the script that defines it. A call to a function a script
   inherits is listed under the parent that defines it, such as `scripts/scriptobject.pex` for `StartTimer`. The
@@ -304,16 +322,22 @@ master's archive holds counts as yours too. The masters' scripts come from their
   function takes, or calls a function no master script defines now, init says so in a `note:` line: your mod was
   built against another version of the game, so rebuild it.
 - Each master quest your scripts call `SetStage` or `SetCurrentStageID` on, with the stage numbers, when the quest
-  is a script property your plugin fills (or the quest itself, when your plugin attaches the script to an override
-  of a master quest). A stage number counts when it is written in the script or comes from an Int property your
-  plugin fills. Quests and stages handed down through your script's own functions, such as
-  `Step(MyQuest, 100)` calling `akQuest.SetStage(aiStage)`, are followed too. A quest your plugin overrides keeps its
-  `copied: true` record and gets the stages added.
+  is a script property your plugin fills (or the quest itself, when your plugin attaches the script, or a quest
+  fragment script, to an override of a master quest). A stage number counts when it is written in the script or
+  comes from an Int property your plugin fills. Quests and stages handed down through your script's own functions,
+  such as `Step(MyQuest, 100)` calling `akQuest.SetStage(aiStage)`, are followed too. A quest your plugin overrides
+  keeps its `copied: true` record and gets the stages added.
+- A master's own fragment and alias scripts, kept in your plugin's copy of a master record, are the master's and
+  aren't read for stages.
 
-What it can't see: a quest or stage number worked out while the game runs (a variable, a calculation, a quest
-found with `Game.GetForm`), quests in quest alias scripts and fragment scripts, and calls made through another
-object's own functions. Such a quest is left out, and a quest with an unknown stage says so in its `why` text.
-Check the file and add anything else by hand. The same mod and the same game files always give the same file.
+What it can't see: a quest or stage number worked out while the game runs (a variable, a calculation, a number
+above 65535, a quest found with `Game.GetForm` or `GetOwningQuest()`), and calls made through another object's own
+functions. Such a quest is left out, and a quest with an unknown stage says so in its `why` text.
+
+A loose script in the Data folder that doesn't match the rules above is left out; to have init read all of your
+loose scripts, run it on the plugin in your own folder. Script properties of type Var (which the Creation Kit can't fill) are skipped. A
+mod with more than 5,000 scripts of its own is read up to that limit, with a `note:` line. Check the file and add
+anything else by hand. The same mod and the same game files always give the same file.
 
 ## fingerprint
 

@@ -425,12 +425,18 @@ def init(mod_path, dirs, tools=None, tools_msg=""):
     else:
         _add_script_part(mod_path, dirs, tools, masters, notes, summary)
         masters = _in_load_order(masters, header_masters)
-        if not masters:
+        if not masters and summary["scripts"] is None:
+            notes.append("the plugin overrides no master records with Editor IDs; add records your scripts use by "
+                         "hand")
+        elif not masters:
             notes.append("found nothing to watch: the plugin overrides no master records with Editor IDs, and its "
                          "scripts call no master script functions and set no master quest stages")
         about = (f"Made by sf-patch-day {VERSION} drift init from {mod}: the master records it overrides, the master "
                  f"script functions its scripts call and the master quest stages they set. Add anything else it "
                  f"relies on by hand; see the README.")
+        if summary["scripts"] is None:  # the script part failed (its note says why)
+            about = (f"Made by sf-patch-day {VERSION} drift init from {mod}; its scripts couldn't be read. Add quest "
+                     f"stages your scripts set and master script functions they call by name; see the README.")
     return {"mod": mod, "about": about, "masters": masters}, notes, summary
 
 
