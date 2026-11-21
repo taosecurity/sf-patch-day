@@ -313,9 +313,11 @@ Where your plugin sits matters for loose scripts:
   no namespace or a `Fragments:` script, when your plugin names it or one of your mod's own scripts uses it (as a
   helper it calls with `callstatic` or a parent it extends; a type it only declares isn't enough). A `note:` line
   lists the scripts taken in that way.
-- In the Data folder, a master installed loose is
-  recognized by the scripts its own records name. A loose copy of a master script there could be any mod's, so
-  init reads the master's archive copy and says so in a `note:` line.
+- In the Data folder, a master installed loose is recognized by the scripts its own records name. A loose copy of
+  a master script there could be any mod's, so init reads the master's archive copy and says so in a `note:` line.
+- Settled limits in the shared Data folder: a bare helper taken in through `callstatic` or a parent can bring in
+  its own `callstatic` targets and parents too, and a bare script the mod only holds in a property or variable
+  isn't read. Run init on the plugin in your mod's own folder to avoid both.
 
 From the code it adds:
 
