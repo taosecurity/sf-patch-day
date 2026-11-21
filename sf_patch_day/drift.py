@@ -46,6 +46,9 @@ def load_mods(path):
 
 def validate_mods(mods):
     p = []
+    if isinstance(mods, dict) and mods.get("masters") == {}:  # e.g. from drift init on a plugin with no overrides
+        return ['"masters" is empty, so there is nothing to watch: add at least one master with the records, quest '
+                'stages or script functions your mod relies on']
     if not isinstance(mods, dict) or not isinstance(mods.get("masters"), dict) or not mods["masters"]:
         return ['the top level needs "masters": {"<plugin file>": {...}, ...} with at least one plugin']
 

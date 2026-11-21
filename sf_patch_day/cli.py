@@ -200,7 +200,8 @@ def cmd_dlls(args):
 
 
 def cmd_drift(args):
-    # main() has already answered a bare "drift" (no step) with the help and a RESULT line.
+    if not getattr(args, "drift_cmd", None):  # a bare "drift" (main() also stops it first): the help and RESULT
+        return missing_step(args)
     dirs, data = data_dirs(args)
     if args.drift_cmd == "init":
         refuse_game_folder(args.out, data)
@@ -213,8 +214,13 @@ def cmd_drift(args):
         for note in notes:
             say(f"note: {note}")
         say_warnings()
-        say("Next: add the quest stages your scripts set and the master script functions they call, then run "
-            "drift snapshot.")
+        if mods["masters"]:
+            say("Next: add the quest stages your scripts set and the master script functions they call, then run "
+                "drift snapshot.")
+        else:  # an empty file: snapshot would refuse it, so say what it needs first
+            say(f"Next: {args.out} has nothing to watch yet. Add at least one master with the records, quest stages "
+                f"or script functions your mod relies on (README section 'The mods file', "
+                f"examples/mods.example.json), then run drift snapshot.")
         return 0
     mods = drift.load_mods(args.mods)
     if args.drift_cmd == "snapshot":
@@ -287,20 +293,26 @@ def say_warnings(always=False):
         say(f"WARNING: {w}")
 
 
+def missing_step(args):
+    """A missing command or drift step: the help on stdout, then the RESULT line on stderr, exit 3."""
+    cmd = getattr(args, "cmd", None)
+    try:
+        build_parser().parse_args(["drift", "--help"] if cmd else ["--help"])
+    except SystemExit:
+        pass
+    sys.stdout.flush()  # the help first, so "see the help above" holds in a terminal
+    what = ("no drift step given. Fix: run sf-patch-day drift init, snapshot or check" if cmd else
+            "no command given. Fix: run sf-patch-day dlls, drift or fingerprint")
+    print(f"RESULT: CANNOT CHECK: {what} (see the help above).", file=sys.stderr)
+    return CANNOT
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     # A missing command or drift step is a command-line mistake like the others: the help, then the RESULT line
     # on stderr, exit 3. (The bare "drift" command has no --verbose or --log, so this comes before the log.)
     if not args.cmd or (args.cmd == "drift" and not args.drift_cmd):
-        try:
-            build_parser().parse_args(["drift", "--help"] if args.cmd else ["--help"])
-        except SystemExit:
-            pass
-        sys.stdout.flush()  # the help first, so "see the help above" holds in a terminal
-        what = ("no drift step given. Fix: run sf-patch-day drift init, snapshot or check" if args.cmd else
-                "no command given. Fix: run sf-patch-day dlls, drift or fingerprint")
-        print(f"RESULT: CANNOT CHECK: {what} (see the help above).", file=sys.stderr)
-        return CANNOT
+        return missing_step(args)
     plugin_module.clear_cache()
     _JSON[0] = bool(getattr(args, "json", False))
     log_open, code = False, CANNOT

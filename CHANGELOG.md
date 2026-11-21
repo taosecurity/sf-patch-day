@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.3 (2026-11-20)
+
+### What's new
+
+This is a small maintenance release. sf-patch-day tells you, after a Starfield update, which of your SFSE plugins still load and what each one waits for, and it tells mod authors whether the update changed anything their mod relies on. In 0.1.3, `drift init` explains what to do when your mod changes no master records, the `drift` command handles a missing step in its own code, and the release was installed and run from a clean folder before it went out.
+
+### Example
+
+    > .\sf-patch-day.cmd drift init MyMod.esm -o mods.json
+    wrote mods.json: 0 overridden record(s) in 0 master(s)
+    note: the plugin overrides no master records with Editor IDs; add records your scripts use by hand
+    Next: mods.json has nothing to watch yet. Add at least one master with the records, quest stages or script functions your mod relies on (README section 'The mods file', examples/mods.example.json), then run drift snapshot.
+
+    > .\sf-patch-day.cmd drift snapshot --mods mods.json -o baseline.json
+    RESULT: CANNOT CHECK: mods.json doesn't follow the mods file format:
+      "masters" is empty, so there is nothing to watch: add at least one master with the records, quest stages or script functions your mod relies on
+    Fix: see the README section 'The mods file' and examples/mods.example.json.
+
+The run is on a real Steam install, with the mod's name changed.
+
+### Fixes
+
+- The `drift` command now answers a missing step (`sf-patch-day drift` alone) itself, with the help and a `RESULT: CANNOT CHECK` line, instead of relying on the main program to stop it first. Nothing changes for someone typing the command; another Python program that calls the `drift` code directly now gets the same answer instead of an error. A new test checks this.
+- `drift init` on a mod that changes no master records (many script-based mods) used to end with "Next: ... then run drift snapshot", and snapshot then refused the empty file with a general format message. Now init says the file has nothing to watch yet and what to add, and snapshot says the "masters" list is empty. Found in the clean-folder test; a new test checks it.
+
+### Download
+
+Download `sf-patch-day-0.1.3.zip` and its `.sha256` file below, unzip it anywhere and follow the Install steps in the README. It needs Python 3.9 or newer and nothing else.
+
 ## 0.1.2 (2026-11-20)
 
 ### What's new

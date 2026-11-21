@@ -383,6 +383,24 @@ class TestDrift(Temp):
         self.assertEqual(drift.validate_mods(m), [])
         self.snap()
 
+    def test_init_with_nothing_to_watch(self):
+        # Found in the 0.1.3 clean-folder test: a plugin with only its own records gives an empty mods file. init
+        # must say snapshot needs an entry first, and snapshot's refusal must name the cause, not a format error.
+        mod = self.p("src", "OwnOnly.esm")
+        write(mod, mk.plugin(0x1, ["Starfield.esm"],
+                             [mk.group("KYWD", [mk.record("KYWD", 0x01000800, [mk.edid("Own_Kw")])])]))
+        out_file = self.p("src", "mods.json")
+        code, out = run("drift", "init", mod, "-o", out_file, "--data", self.data)
+        self.assertEqual(code, 0, out)
+        self.assertIn("has nothing to watch yet", out)
+        self.assertNotIn("Next: add the quest stages", out)  # not the line that sends you straight to snapshot
+        code, out = run("drift", "snapshot", "--mods", out_file, "-o", self.base, "--data", self.data)
+        self.assertEqual(code, 3)
+        self.assertIn('"masters" is empty, so there is nothing to watch', out)
+        self.assertFalse(os.path.exists(self.base))
+        # A file with no "masters" at all keeps the format message.
+        self.assertIn("at least one plugin", drift.validate_mods({"mod": "x.esm"})[0])
+
     def test_fingerprint(self):
         code, out = run("fingerprint", "TestMaster.esm", "--data", self.data)
         self.assertEqual(code, 0, out)
@@ -591,6 +609,14 @@ class TestDrift(Temp):
         self.assertIn("usage:", out)
         self.assertIn("RESULT: CANNOT CHECK: no drift step given", err)
         self.assertNotIn("unexpected error", out + err)
+        # cmd_drift handles a bare "drift" itself too, without relying on main() to stop it first.
+        args = cli.build_parser().parse_args(["drift"])
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.cmd_drift(args)
+        self.assertEqual(code, 3)
+        self.assertIn("usage:", out.getvalue())
+        self.assertIn("RESULT: CANNOT CHECK: no drift step given", err.getvalue())
         # A run that stops on an error ends its log with that exit code, not "done".
         code, out, err = run_err("fingerprint", "x.esm", "--verbose", "--data", self.p("nowhere"))
         self.assertEqual(code, 3)
