@@ -311,7 +311,9 @@ Where your plugin sits matters for loose scripts:
   loose script counts as yours when its namespace (the part before the first `:`, such as `MyMod` in
   `MyMod:QuestScript`) is one your plugin's scripts or your archive use and no master uses, or, for a script with
   no namespace or a `Fragments:` script, when your plugin names it or one of your mod's own scripts uses it (as a
-  helper it calls with `callstatic`, a parent it extends, or a type it declares). A master installed loose is
+  helper it calls with `callstatic` or a parent it extends; a type it only declares isn't enough). A `note:` line
+  lists the scripts taken in that way.
+- In the Data folder, a master installed loose is
   recognized by the scripts its own records name. A loose copy of a master script there could be any mod's, so
   init reads the master's archive copy and says so in a `note:` line.
 

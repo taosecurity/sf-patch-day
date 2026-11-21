@@ -134,7 +134,8 @@ def _tail_entry(r, objfmt, version, bare_empty):
     entry (name, status, properties). With an empty name the two references disagree: Mutagen (ReadEntry and
     WriteEntry) writes the name only, for every entry; xEdit's Starfield definitions do that only for the quest's
     fragment script (wbScriptFragmentsEmptyScriptDecider) and read a full entry everywhere else. bare_empty picks
-    the name-only layout; vmad_parts tries it first and falls back to the full one."""
+    the name-only layout; vmad_parts tries the record type's preferred layout first (BARE_FIRST) and falls back to
+    the other."""
     name = r.wstr()
     if not name and bare_empty:
         return name, {}
@@ -176,17 +177,25 @@ def _tail(r, sig, objfmt, version, bare_empty=True):
     return [x for x in out if x[0]]
 
 
+# The record types whose fragment section is read with the name-only layout for an empty script name first. A
+# quest's empty fragment script is name-only in both references; its alias scripts are name-only in Mutagen's. The
+# other types (INFO, PACK, SCEN, PERK, TMLM) are read with xEdit's full entry first.
+BARE_FIRST = {"QUST"}
+
+
 def vmad_parts(data, sig):
     """(attached, extra, problem): attached = [(script name, {lowercase property name: ("obj", FormID) or
     ("int", n)})] from a VMAD field; extra = the fragment and alias scripts after them, as (name, props, kind);
     problem = why that second part couldn't be read, or None. The attached list failing raises ScriptError.
-    The section is read with Mutagen's layout for an empty script name first and, when that fails or doesn't end at
-    the field's end, with xEdit's (see _tail_entry); the two differ only when an entry's name is empty."""
+    The section is read with the record type's preferred layout for an empty script name first (name-only for QUST,
+    xEdit's full entry for the others; see _tail_entry and BARE_FIRST) and, when that fails or doesn't end at the
+    field's end, with the other one; the two differ only when an entry's name is empty. When neither ends at the
+    field's end, the preferred layout's result is kept if it read."""
     r = _Buf(data)
     version, objfmt = r.u16(), r.u16()
     attached = [_entry(r, objfmt, version) for _ in range(r.u16())]
     start, tries = r.p, []
-    for bare_empty in (True, False):
+    for bare_empty in ((True, False) if sig in BARE_FIRST else (False, True)):
         r.p = start
         try:
             extra = _tail(r, sig, objfmt, version, bare_empty)
@@ -196,7 +205,7 @@ def vmad_parts(data, sig):
         if r.p == len(r.b):
             return attached, extra, None
         tries.append((extra, None))
-    for extra, _problem in tries:  # neither ends at the field's end: the first one that read, as before
+    for extra, _problem in tries:  # neither ends at the field's end: the preferred layout's, if it read
         if extra is not None:
             return attached, extra, None
     return attached, [], tries[0][1]
@@ -486,8 +495,9 @@ def analyze(mod_path, dirs, tools):
     the mod's, even when a master has a copy too; only scripts whose winning copy is in a master's archive are
     master scripts. When the plugin sits in a shared folder (the Data folder), a loose script there counts as the
     mod's only when its namespace is one the mod uses and no master uses, or (no namespace, or Fragments:) when the
-    mod's own records or one of the mod's own scripts name it (as a type, a callstatic or a parent); in both cases
-    only when no master archive holds it and no loose-installed master's records name it."""
+    mod's own records name it or one of the mod's own scripts extends it or calls it with callstatic (a declared
+    type isn't enough; a note lists the scripts taken in this way); in both cases only when no master archive holds
+    it and no loose-installed master's records name it."""
     nk = tools.ba2.name_key
     notes, stats = [], {"attached": 0, "own": 0, "vmad_failed": 0, "tail_failed": 0}
     folder = os.path.dirname(os.path.abspath(mod_path))
@@ -535,7 +545,10 @@ def analyze(mod_path, dirs, tools):
             log.info("scripts", f"{folder} is shared: loose scripts count as {mod}'s in namespaces {sorted(mod_ns)}"
                                 f" and when its records or its own scripts name them (no namespace or Fragments:)")
 
-        reached = set()  # loose scripts one of the mod's own scripts references (a type, a callstatic, a parent)
+        # Loose scripts one of the mod's own scripts extends (its parent) or calls with callstatic. A declared type
+        # (a variable, property, local or cast) isn't enough: a script can hold another mod's object without being
+        # part of that mod.
+        reached, via_code = set(), set()
 
         def loose_is_mods(k):
             if not shared:
@@ -545,6 +558,8 @@ def analyze(mod_path, dirs, tools):
             return (k in named or k in reached) if _ns(k) in GENERIC_NS else _ns(k) in mod_ns
 
         def take_loose(k):  # loose beats archive: the mod's loose copy is the one the game reads
+            if shared and _ns(k) in GENERIC_NS and k not in named and k not in own:
+                via_code.add(k)  # taken in only because the mod's code extends or calls it
             lib.add_loose(k, loose_keys[k], (mod, "loose", scripts_root))
             own.add(k)
 
@@ -571,13 +586,14 @@ def analyze(mod_path, dirs, tools):
             s = lib.get(key)
             if s is None:
                 continue
-            refs = set(s.types.values()) | set(s.props.values()) | {s.parent}
+            code_refs = {s.parent}  # the references that make a bare loose script the mod's own
+            refs = set(s.types.values()) | set(s.props.values())
             for f in s.functions:
                 refs |= set(f.types.values())
-                refs |= {_ident(a[0]) for op, a in f.code if op == "callstatic" and a}
-            for t in sorted(r for r in refs if r and is_script_type(r)):
+                code_refs |= {_ident(a[0]) for op, a in f.code if op == "callstatic" and a}
+            for t in sorted(r for r in refs | code_refs if r and is_script_type(r)):
                 k = script_key(t, nk)
-                if k in loose_keys:
+                if k in loose_keys and t in code_refs:
                     reached.add(k)
                 if k not in done and (k in own or (k in loose_keys and loose_is_mods(k))):
                     todo.append(k)
@@ -640,6 +656,13 @@ def analyze(mod_path, dirs, tools):
             notes.append(f"{scripts_root} holds loose copies of {len(shadowed)} master script(s) your scripts call "
                          f"({', '.join(sorted(shadowed))}); the game runs those, not the archive copies drift reads, "
                          f"and init can't tell which mod they come from")
+        if via_code:
+            shown = sorted(os.path.splitext(os.path.relpath(loose_keys[k], scripts_root))[0].replace(os.sep, ":")
+                           .replace("/", ":") for k in via_code)
+            more = f" and {len(shown) - 20} more" if len(shown) > 20 else ""
+            notes.append(f"{len(shown)} loose script(s) in {scripts_root} with no namespace (or Fragments:) were read "
+                         f"as your mod's own because your scripts extend them or call them with callstatic: "
+                         f"{', '.join(shown[:20])}{more}")
         quests = _stage_calls(lib, attached, shown_name, nk, master_of, own)
         # One archive per master in the mods file: keep the one holding the most called scripts.
         out = {}

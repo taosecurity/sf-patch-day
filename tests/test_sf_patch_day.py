@@ -793,6 +793,22 @@ class TestScriptParts(Temp):
         field = mk.vmad([], tail=tail)[6:]
         self.assertEqual(scripts.vmad_parts(field, "QUST"), ([], [("SM:AliasB", {}, "alias")], None))
 
+    def test_fragment_layout_order_per_record_type(self):
+        # A quest tries the name-only layout first; here its empty alias entry is a full one (as xEdit reads it),
+        # followed by a named alias: the name-only reading doesn't fit, the full one does.
+        alias = struct.pack("<HhI", 0, 0, 0) + struct.pack("<HHH", 6, 2, 1)
+        tail = (b"\x03" + struct.pack("<H", 0) + mk._wstr("") + struct.pack("<H", 2)
+                + alias + mk.script_entry("", []) + alias + mk.script_entry("SM:AliasB", []))
+        self.assertEqual(scripts.vmad_parts(mk.vmad([], tail=tail)[6:], "QUST"), ([], [("SM:AliasB", {}, "alias")],
+                                                                                   None))
+        # PERK and TMLM try xEdit's full entry first. With a byte too many at the end neither layout ends at the
+        # field's end; the preferred (full) reading is kept, which finds the fragment (name-only finds none).
+        for sig in ("PERK", "TMLM"):
+            with self.subTest(sig):
+                tail = mk.fragment_tail(sig, fragments=[("TIF_A", "Fragment_A")], full_empty=True) + b"\x00"
+                self.assertEqual(scripts.vmad_parts(mk.vmad([], tail=tail)[6:], sig),
+                                 ([], [("TIF_A", {}, "fragment")], None))
+
     def test_console_archives_left_out(self):
         d = self.p("d")
         write(os.path.join(d, "MyMod - Main.ba2"), mk.ba2([]))
@@ -1171,6 +1187,28 @@ class TestInitScriptOwnership(Temp):
                          {"scripts/TM/Api.pex": ["Pong"], "scripts/TM/Base.pex": ["Hello"]}, notes)
         self.assertEqual(summary["scripts"], 3)
         self.assertFalse([n for n in notes if "couldn't read" in n], notes)
+
+    def test_shared_data_folder_bare_type_is_not_enough(self):
+        # A bare loose script the mod's script only declares a variable of (another mod's object it holds) isn't
+        # the mod's: its call to TM:Api.Pong isn't listed. The bare helpers it calls with callstatic are, and a note
+        # lists them (20 names, then "and N more").
+        data = self.p("Data")
+        tm_world(data)
+        scr = os.path.join(data, "Scripts")
+        helpers = [f"ScriptModHelper{i:02d}" for i in range(22)]
+        write(os.path.join(scr, "ScriptModMain.pex"), calls("ScriptModMain", "Quest", ("TM:Base", "Hello", []),
+                                                            *[(h, "Go", []) for h in helpers],
+                                                            variables=[("Held", "OtherModThing")]))
+        for h in helpers:
+            write(os.path.join(scr, h + ".pex"), calls(h, "ScriptObject"))
+        write(os.path.join(scr, "OtherModThing.pex"), calls("OtherModThing", "ScriptObject", ("TM:Api", "Pong", [])))
+        mod = self.mod_plugin(os.path.join(data, "ScriptMod.esm"), vmad=mk.vmad([("ScriptModMain", [])]))
+        mods, notes, summary = drift.init(mod, [data], TOOLS)
+        self.assertEqual(mods["masters"]["TestMaster.esm"]["functions"], {"scripts/TM/Base.pex": ["Hello"]}, notes)
+        self.assertEqual(summary["scripts"], 23)
+        self.assertIn(f"22 loose script(s) in {scr} with no namespace (or Fragments:) were read as your mod's own "
+                      f"because your scripts extend them or call them with callstatic: {', '.join(helpers[:20])} "
+                      f"and 2 more", notes)
 
     def test_failed_script_part_says_so(self):
         data, src = self.p("Data"), self.p("src")
