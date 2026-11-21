@@ -58,8 +58,9 @@ Options go after the command name.
 | Probe FormIDs for in-game checks | `python -I sf-patch-day.py fingerprint "<Plugin.esm>"` |
 
 The mods file format is in README.md ("The mods file") and `examples/mods.schema.json`. After `drift init`, the
-author must add quest stages and script functions by hand; init only finds overridden records. When the mod
-overrides no master records with Editor IDs, init still exits 0 but writes an empty `"masters"` and says "has nothing
+author must add quest stages and script functions by hand; init only finds overridden records. When init finds
+nothing it can watch by name (no overridden master records with Editor IDs, or none whose master the plugin lists;
+the second case prints its own note and means the plugin is damaged), init still exits 0 but writes an empty `"masters"` and says "has nothing
 to watch yet"; `drift snapshot` refuses that file (exit 3) until at least one entry is added.
 
 ## 6. Inputs, outputs, exit codes and the log

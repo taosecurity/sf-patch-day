@@ -295,13 +295,13 @@ def say_warnings(always=False):
 
 def missing_step(args, drift_step=False):
     """A missing command or drift step: the help on stdout, then the RESULT line on stderr, exit 3."""
-    cmd = drift_step or getattr(args, "cmd", None)
+    is_drift = drift_step or getattr(args, "cmd", None) == "drift"
     try:
-        build_parser().parse_args(["drift", "--help"] if cmd else ["--help"])
+        build_parser().parse_args(["drift", "--help"] if is_drift else ["--help"])
     except SystemExit:
         pass
     sys.stdout.flush()  # the help first, so "see the help above" holds in a terminal
-    what = ("no drift step given. Fix: run sf-patch-day drift init, snapshot or check" if cmd else
+    what = ("no drift step given. Fix: run sf-patch-day drift init, snapshot or check" if is_drift else
             "no command given. Fix: run sf-patch-day dlls, drift or fingerprint")
     print(f"RESULT: CANNOT CHECK: {what} (see the help above).", file=sys.stderr)
     return CANNOT
