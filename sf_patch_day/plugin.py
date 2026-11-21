@@ -200,8 +200,9 @@ class Plugin:
     def __exit__(self, *exc):
         self.close()
 
-    def walk(self):
-        """Yields (sig, form ID, flags, body start, body size, top-level group label) for every record."""
+    def walk(self, only_top=None):
+        """Yields (sig, form ID, flags, body start, body size, top-level group label) for every record, or only for
+        the records in the top-level group labelled only_top (such as "QUST")."""
         b = self.data
         try:
             i = 24 + struct.unpack_from("<I", b, 4)[0]
@@ -212,6 +213,9 @@ class Plugin:
                 top = b[i + 8:i + 12].decode("latin1")
                 if top_size < 24 or i + top_size > len(b):
                     raise PluginError(f"{self.path}: group at byte {i} runs past the end (damaged)")
+                if only_top is not None and top != only_top:
+                    i += top_size
+                    continue
                 stack = [(i + 24, i + top_size)]
                 while stack:
                     j, end = stack.pop()

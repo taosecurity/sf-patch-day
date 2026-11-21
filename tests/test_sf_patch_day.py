@@ -10,6 +10,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -21,7 +22,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
 import makers as mk  # noqa: E402
-from sf_patch_day import cli, dlls, drift, pe, pextools  # noqa: E402
+from sf_patch_day import cli, dlls, drift, pe, pextools, scripts  # noqa: E402
 from sf_patch_day.plugin import Plugin  # noqa: E402
 
 V244, V300 = mk.game_version(1, 16, 244), mk.game_version(1, 16, 300)
@@ -382,6 +383,7 @@ class TestDrift(Temp):
         self.assertEqual(run("drift", "init", mod, "-o", out_file, "--data", self.data)[0], 3)  # exists, no --force
         # The written file is a valid mods file, and every record has a type (fast scanning).
         self.assertEqual(drift.validate_mods(m), [])
+        self.assertEqual(schema_problems(m), [])
         self.snap()
 
     def test_init_with_nothing_to_watch(self):
@@ -714,6 +716,214 @@ class TestDriftFunctions(Temp):
         self.assertIn("Gone.pex: script GONE", out)
         self.assertEqual(run("drift", "check", "--mods", mods, "--baseline", base, "--data", data,
                              "--pex-tools", self.p("nowhere"))[0], 3)
+
+
+# ---- drift init reads the mod's scripts --------------------------------------------------------------------------
+class TestScriptParts(Temp):
+    """The parts of the script reader that don't need sf-pex-tools."""
+
+    def test_split_args(self):
+        self.assertEqual(scripts.split_args("ident:SetStage, ident:q, ident:::t1, int:10"),
+                         ["ident:SetStage", "ident:q", "ident:::t1", "int:10"])
+        # A comma or quote inside a string doesn't split it.
+        self.assertEqual(scripts.split_args("ident:x, str:'a, b', str:\"it's, ok\", None"),
+                         ["ident:x", "str:'a, b'", "str:\"it's, ok\"", "None"])
+        self.assertEqual(scripts.split_args(""), [])
+
+    def test_vmad(self):
+        field = mk.vmad([("SM:QuestScript", [
+            ("TargetQuest", 1, 0x01000800), ("Label", 2, "x"), ("StageProp", 3, 20), ("Rate", 4, 1.5),
+            ("On", 5, True), ("Pair", 7, [("A", 1, 0x01000801), ("B", 3, 2)]), ("Many", 11, [1, 2]),
+            ("Names", 12, ["a", "b"]), ("Rows", 17, [[("C", 3, 1)], [("C", 3, 2)]]), ("After", 1, 0x02000801)]),
+            ("Second", [("Q", 1, 7)])], tail=b"\x02\x00\x00")  # quest fragment data after the scripts is left alone
+        found = scripts.vmad_scripts(field[6:])
+        self.assertEqual(found, [("SM:QuestScript", {"targetquest": ("obj", 0x01000800), "stageprop": ("int", 20),
+                                                     "after": ("obj", 0x02000801)}),
+                                 ("Second", {"q": ("obj", 7)})])
+        with self.assertRaises(scripts.ScriptError):
+            scripts.vmad_scripts(field[6:][:20])  # cut off
+
+    def test_own_archives(self):
+        d = self.p("d")
+        write(os.path.join(d, "MyMod - Main.ba2"), mk.ba2([("scripts/a.pex", b"x")]))
+        write(os.path.join(d, "MyMod - Textures.ba2"), b"BTDX\x01\x00\x00\x00DX10" + bytes(12))  # textures: no scripts
+        write(os.path.join(d, "MyMod - Part - Main.ba2"), mk.ba2([]))  # belongs to "MyMod - Part.esm"
+        write(os.path.join(d, "MyModOther - Main.ba2"), mk.ba2([]))
+        self.assertEqual([os.path.basename(p) for p in scripts.own_archives("MyMod", [d])], ["MyMod - Main.ba2"])
+        self.assertEqual([os.path.basename(p) for p in scripts.own_archives("mymod - part", [d])],
+                         ["MyMod - Part - Main.ba2"])
+
+    def test_init_without_pex_tools(self):
+        data, mod = self.p("Data"), self.p("src", "ScriptMod.esm")
+        write(os.path.join(data, "Starfield.esm"), mk.plugin(0x1))
+        write(os.path.join(data, "TestMaster.esm"), master_esm())
+        write(mod, mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm"], [
+            mk.group("QUST", [mk.record("QUST", 0x02000800, [mk.edid("SM_Quest"),
+                                                             mk.vmad([("SM:QuestScript", [])])])])]))
+        mods, notes, summary = drift.init(mod, [data], None, "sf-pex-tools not found (install it)")
+        self.assertEqual(mods["masters"], {})  # as in 0.1.3: only overrides, and there are none
+        self.assertTrue(any(n.startswith("scripts not read: sf-pex-tools not found (install it)") for n in notes),
+                        notes)
+        self.assertIsNone(summary["scripts"])
+
+
+def script_mod(root, data):
+    """A made-up mod in root (ScriptMod.esm, its archive and a loose script) whose scripts call functions of
+    sf-pex-tools' made-up test scripts (in TestMaster - Main.ba2) and set stages of TestMaster.esm's TM_Quest."""
+    write(os.path.join(data, "Starfield.esm"), mk.plugin(0x1))
+    write(os.path.join(data, "TestMaster.esm"), master_esm(stages=(10, 20, 30)))
+    shutil.copy(os.path.join(TOOLS.folder, "tests", "fixtures", "a1.ba2"), os.path.join(data, "TestMaster - Main.ba2"))
+    quest = mk.pex("SM:QuestScript", "Quest",
+                   variables=[("::TargetQuest_var", "Quest"), ("::StageProp_var", "Int"),
+                              ("Helper", "SfPexToolsTest:Alpha"), ("Kid", "SM:Kid")],
+                   properties=[("TargetQuest", "Quest", "::TargetQuest_var"), ("StageProp", "Int", "::StageProp_var")],
+                   functions=[
+                       ("Run", [], [("::t1", "Bool"), ("::t2", "Int"), ("::t3", "Float"), ("::t4", "String"),
+                                    ("::nonevar", "None")], [
+                           ("callmethod", ["ident:SetStage", "ident:::TargetQuest_var", "ident:::t1", "int:10"]),
+                           ("callmethod", ["ident:Step", "ident:self", "ident:::nonevar", "ident:::TargetQuest_var",
+                                           "ident:::StageProp_var"]),
+                           ("callmethod", ["ident:AddMission", "ident:Helper", "ident:::t2", "str:a, b", "int:5"]),
+                           ("callmethod", ["ident:score", "ident:Helper", "ident:::t3", "int:1"]),  # 1 of 3 arguments
+                           ("callstatic", ["ident:SfPexToolsTest:Beta", "ident:Describe", "ident:::t4"]),
+                           ("callmethod", ["ident:Vanished", "ident:Helper", "ident:::nonevar"]),
+                           ("callmethod", ["ident:Note", "ident:Kid", "ident:::nonevar", "str:x"])]),
+                       ("Step", [("akQuest", "Quest"), ("aiStage", "Int")], [("::t1", "Bool")], [
+                           ("callmethod", ["ident:SetStage", "ident:akQuest", "ident:::t1", "ident:aiStage"])])])
+    kid = mk.pex("SM:Kid", "SfPexToolsTest:Beta", functions=[
+        ("Note", [("asName", "String")], [("::nonevar", "None"), ("::t1", "String")], [
+            ("callparent", ["ident:Note", "ident:::nonevar", "ident:asName"]),
+            ("callmethod", ["ident:Describe", "ident:self", "ident:::t1"])])])
+    selfq = mk.pex("SM:SelfScript", "Quest", functions=[
+        ("Go", [], [("::t1", "Bool"), ("x", "Int")], [
+            ("callmethod", ["ident:SetStage", "ident:self", "ident:::t1", "int:20"]),
+            ("callmethod", ["ident:SetCurrentStageID", "ident:self", "ident:::t1", "ident:x"])])])  # not known
+    write(os.path.join(root, "ScriptMod - Main.ba2"), mk.ba2([("scripts/SM/QuestScript.pex", quest)]))
+    write(os.path.join(root, "Scripts", "SM", "Kid.pex"), kid)  # loose, reached through QuestScript's variable
+    write(os.path.join(root, "Scripts", "SM", "SelfScript.pex"), selfq)  # loose, attached to the override
+    write(os.path.join(root, "Scripts", "Other", "Unrelated.pex"), b"not read")  # another mod's loose script
+    mod = os.path.join(root, "ScriptMod.esm")
+    write(mod, mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm"], [
+        mk.group("QUST", [
+            mk.record("QUST", 0x02000800, [mk.edid("SM_Quest"), mk.vmad([("SM:QuestScript", [
+                ("TargetQuest", 1, 0x01000800), ("StageProp", 3, 30)])], tail=b"\x02\x00\x00")]),
+            # An override of TM_Quest with the mod's script attached: SetStage on self is TM_Quest.
+            mk.record("QUST", 0x01000800, [mk.edid("TM_Quest"), mk.vmad([("SM:SelfScript", [])])])])]))
+    return mod
+
+
+def schema_problems(doc, schema=None, where="$"):
+    """The ways doc breaks examples/mods.schema.json, checked with the parts of JSON Schema that file uses (the
+    standard library has no JSON Schema checker)."""
+    if schema is None:
+        with open(os.path.join(os.path.dirname(HERE), "examples", "mods.schema.json"), encoding="utf-8") as f:
+            schema = json.load(f)
+    kinds = {"object": dict, "array": list, "string": str, "boolean": bool}
+    t = schema.get("type")
+    if t == "integer":
+        if not isinstance(doc, int) or isinstance(doc, bool):
+            return [f"{where}: not an integer"]
+    elif t and not isinstance(doc, kinds[t]):
+        return [f"{where}: not {t}"]
+    p = []
+    if isinstance(doc, (int, float)) and not isinstance(doc, bool):
+        if doc < schema.get("minimum", doc) or doc > schema.get("maximum", doc):
+            p.append(f"{where}: {doc} out of range")
+    if isinstance(doc, str) and not schema.get("minLength", 0) <= len(doc) <= schema.get("maxLength", len(doc)):
+        p.append(f"{where}: length {len(doc)}")
+    if isinstance(doc, dict):
+        p += [f"{where}: {k} missing" for k in schema.get("required", []) if k not in doc]
+        if len(doc) < schema.get("minProperties", 0):
+            p.append(f"{where}: too few entries")
+        pattern = schema.get("propertyNames", {}).get("pattern")
+        for k, v in doc.items():
+            if pattern and not re.search(pattern, k):
+                p.append(f"{where}: name {k!r} doesn't match {pattern}")
+            sub = schema.get("properties", {}).get(k, schema.get("additionalProperties", {}))
+            p += schema_problems(v, sub if isinstance(sub, dict) else {}, f"{where}.{k}")
+    if isinstance(doc, list) and "items" in schema:
+        for i, v in enumerate(doc):
+            p += schema_problems(v, schema["items"], f"{where}[{i}]")
+    return p
+
+
+class TestSchema(unittest.TestCase):
+    def test_example_and_checker(self):
+        with open(os.path.join(os.path.dirname(HERE), "examples", "mods.example.json"), encoding="utf-8") as f:
+            self.assertEqual(schema_problems(json.load(f)), [])
+        self.assertTrue(schema_problems({"masters": {"bad/name.esm": {"records": [{"type": "QUSTX"}]}}}))
+
+
+@unittest.skipIf(TOOLS is None, "sf-pex-tools not found (set SF_PEX_TOOLS)")
+class TestInitScripts(Temp):
+    def test_init_reads_scripts(self):
+        data, src = self.p("Data"), self.p("src")
+        mod = script_mod(src, data)
+        out_file = self.p("mods.json")
+        code, out = run("drift", "init", mod, "-o", out_file, "--data", data, "--pex-tools", TOOLS.folder)
+        self.assertEqual(code, 0, out)
+        with open(out_file, encoding="utf-8") as f:
+            m = json.load(f)
+        self.assertEqual(drift.validate_mods(m), [])
+        self.assertEqual(schema_problems(m), [])
+        self.assertEqual(list(m["masters"]), ["TestMaster.esm"])
+        tm = m["masters"]["TestMaster.esm"]
+        self.assertEqual(tm["ba2"], "TestMaster - Main.ba2")
+        self.assertEqual(tm["functions"], {"scripts/sfpextoolstest/alpha.pex": ["AddMission", "Score"],
+                                           "scripts/sfpextoolstest/beta.pex": ["Describe", "Note"]})
+        # One record: the override, marked copied, with the stages both scripts set (10 constant, 30 from the Int
+        # property through Step, 20 on self). SetCurrentStageID(x) can't be known before the game runs.
+        self.assertEqual(len(tm["records"]), 1, tm["records"])
+        rec = tm["records"][0]
+        self.assertEqual((rec["edid"], rec["type"], rec["copied"], rec["stages"]), ("TM_Quest", "QUST", True, [10, 20, 30]))
+        self.assertIn("SM:QuestScript, SM:SelfScript", rec["why"])
+        self.assertIn("isn't listed", rec["why"])
+        self.assertIn("Score() with 1 argument(s), but the installed TestMaster.esm script takes 3", out)
+        self.assertIn("SfPexToolsTest:Alpha.Vanished(), which no master script defines now", out)
+        self.assertIn("read 3 of your mod's own script(s)", out)
+        self.assertNotIn("Unrelated", out)
+        # The file works with snapshot and check: every stage and function is found.
+        base = self.p("base.json")
+        code, out = run("drift", "snapshot", "--mods", out_file, "-o", base, "--data", data, "--pex-tools", TOOLS.folder)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("not found (check the name)", out)
+        self.assertIn("4 function(s)", out)
+        code, out = run("drift", "check", "--mods", out_file, "--baseline", base, "--data", data,
+                        "--pex-tools", TOOLS.folder)
+        self.assertEqual(code, 0, out)
+        # The same input gives the same file, byte for byte.
+        again = self.p("again.json")
+        self.assertEqual(run("drift", "init", mod, "-o", again, "--data", data, "--pex-tools", TOOLS.folder)[0], 0)
+        with open(out_file, "rb") as a, open(again, "rb") as b:
+            self.assertEqual(a.read(), b.read())
+
+    def test_new_quest_record_and_bad_pex(self):
+        # A quest the mod doesn't override gets its own record; a damaged script is a note, not a failure.
+        data, src = self.p("Data"), self.p("src")
+        script_mod(src, data)
+        selfq = mk.pex("SM:Setter", "Quest", variables=[("::Q_var", "Quest")], properties=[("Q", "Quest", "::Q_var")],
+                       functions=[("Go", [], [("::t1", "Bool")], [
+                           ("callmethod", ["ident:SetStage", "ident:::Q_var", "ident:::t1", "int:10"])])])
+        write(os.path.join(src, "Scripts", "SM", "Setter.pex"), selfq)
+        write(os.path.join(src, "Scripts", "SM", "Broken.pex"), b"\xde\xc0\x57\xfa damaged")
+        mod = os.path.join(src, "Other.esm")
+        write(mod, mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm"], [mk.group("QUST", [
+            mk.record("QUST", 0x02000800, [mk.edid("OT_Quest"), mk.vmad([("SM:Setter", [("Q", 1, 0x01000800)]),
+                                                                           ("SM:Broken", [])])])])]))
+        mods, notes, summary = drift.init(mod, [data], TOOLS)
+        rec = mods["masters"]["TestMaster.esm"]["records"]
+        self.assertEqual(rec, [{"edid": "TM_Quest", "type": "QUST", "why": "Stages set by script SM:Setter",
+                                "stages": [10]}])
+        self.assertEqual(summary["quests"], 1)
+        self.assertTrue(any("couldn't read scripts/SM/Broken.pex" in n for n in notes), notes)
+
+    def test_pex_tools_given_but_missing(self):
+        data, src = self.p("Data"), self.p("src")
+        mod = script_mod(src, data)
+        code, out = run("drift", "init", mod, "-o", self.p("m.json"), "--data", data, "--pex-tools", self.p("nowhere"))
+        self.assertEqual(code, 3)
+        self.assertIn("ba2_extract.py and pex_compare.py aren't there", out)
+        self.assertFalse(os.path.exists(self.p("m.json")))
 
 
 if __name__ == "__main__":

@@ -124,3 +124,112 @@ def cndf(fid, name, conditions):
 
 def glob(fid, name, value):
     return record("GLOB", fid, [edid(name), sub("FLTV", struct.pack("<f", value))])
+
+
+# ---- script data: VMAD fields, compiled scripts (.pex) and general BA2 archives ----------------------------------
+def _wstr(text):
+    b = text.encode("latin-1")
+    return struct.pack("<H", len(b)) + b
+
+
+def vmad_value(ptype, value):
+    """A VMAD property value: 1 Object (FormID), 2 String, 3 Int, 4 Float, 5 Bool, 7 Struct ([(name, type, value)]),
+    11-15 arrays of those, 17 array of structs."""
+    if ptype == 1:
+        return struct.pack("<HhI", 0, -1, value)
+    if ptype == 2:
+        return _wstr(value)
+    if ptype == 3:
+        return struct.pack("<i", value)
+    if ptype == 4:
+        return struct.pack("<f", value)
+    if ptype == 5:
+        return bytes([1 if value else 0])
+    if ptype == 7:
+        return struct.pack("<I", len(value)) + b"".join(vmad_property(*m) for m in value)
+    if 11 <= ptype <= 15:
+        return struct.pack("<I", len(value)) + b"".join(vmad_value(ptype - 10, v) for v in value)
+    if ptype == 17:
+        return struct.pack("<I", len(value)) + b"".join(vmad_value(7, v) for v in value)
+    raise ValueError(ptype)
+
+
+def vmad_property(name, ptype, value):
+    return _wstr(name) + bytes([ptype, 1]) + vmad_value(ptype, value)
+
+
+def vmad(scripts, tail=b""):
+    """A VMAD field (version 6, object format 2): scripts = [(script name, [(property, type, value)])]. tail stands
+    in for the quest fragment data that follows the scripts in a quest's VMAD."""
+    out = struct.pack("<HHH", 6, 2, len(scripts))
+    for name, props in scripts:
+        out += _wstr(name) + b"\x00" + struct.pack("<H", len(props)) + b"".join(vmad_property(*p) for p in props)
+    return sub("VMAD", out + tail)
+
+
+_OPS = {"assign": (0x0D, 2, False), "cast": (0x0E, 2, False), "callmethod": (0x17, 3, True),
+        "callparent": (0x18, 2, True), "callstatic": (0x19, 3, True), "return": (0x1A, 1, False),
+        "propget": (0x1C, 3, False)}
+
+
+def pex(name, parent="", variables=(), properties=(), functions=()):
+    """A tiny compiled Papyrus script (PEX 3.12), made up for the tests.
+    variables: [(name, type)]; properties: [(name, type, backing variable)] (auto properties);
+    functions: [(name, [(param, type)], [(local, type)], [(op, [arg, ...])])] in the empty state, where an argument
+    is "ident:x", "str:text", "int:3" or "None"."""
+    strings = []
+
+    def s(text):
+        if text not in strings:
+            strings.append(text)
+        return struct.pack("<H", strings.index(text))
+
+    def val(arg):
+        if arg == "None":
+            return b"\x00"
+        kind, _, text = arg.partition(":")
+        if kind == "ident":
+            return b"\x01" + s(text)
+        if kind == "str":
+            return b"\x02" + s(text)
+        if kind == "int":
+            return b"\x03" + struct.pack("<i", int(text))
+        raise ValueError(arg)
+
+    def func(params, locals_, code):
+        out = s("None") + s("") + struct.pack("<IB", 0, 0)
+        out += struct.pack("<H", len(params)) + b"".join(s(n) + s(t) for n, t in params)
+        out += struct.pack("<H", len(locals_)) + b"".join(s(n) + s(t) for n, t in locals_)
+        out += struct.pack("<H", len(code))
+        for op, args in code:
+            num, fixed, variadic = _OPS[op]
+            out += bytes([num]) + b"".join(val(a) for a in args[:fixed])
+            if variadic:
+                out += val(f"int:{len(args) - fixed}") + b"".join(val(a) for a in args[fixed:])
+        return out
+
+    obj = s(parent) + s("") + b"\x00" + struct.pack("<I", 0) + s("")
+    obj += struct.pack("<H", 0)  # structs
+    obj += struct.pack("<H", len(variables)) + b"".join(s(n) + s(t) + struct.pack("<I", 0) + b"\x00\x00"
+                                                        for n, t in variables)
+    obj += struct.pack("<H", 0)  # guards
+    obj += struct.pack("<H", len(properties)) + b"".join(s(n) + s(t) + s("") + struct.pack("<IB", 0, 7) + s(v)
+                                                         for n, t, v in properties)
+    obj += struct.pack("<H", 1) + s("") + struct.pack("<H", len(functions))
+    obj += b"".join(s(n) + func(p, lo, c) for n, p, lo, c in functions)
+    body = struct.pack("<H", 0)  # user flags
+    body += struct.pack("<H", 1) + s(name) + struct.pack("<I", len(obj) + 4) + obj
+    head = struct.pack("<IBBHQ", 0xFA57C0DE, 3, 12, 4, 0) + _wstr(name + ".psc") + _wstr("test") + _wstr("test")
+    return head + struct.pack("<H", len(strings)) + b"".join(_wstr(t) for t in strings) + b"\x00" + body
+
+
+def ba2(files):
+    """A general BA2 (version 1, stored, no compression): files = [(stored name, bytes)]. Name hashes are 0."""
+    head, rec = 24, 36
+    off = head + rec * len(files)
+    records, blobs = b"", b""
+    for _name, data in files:
+        records += struct.pack("<I4sIIQIII", 0, b"pex\0", 0, 0, off + len(blobs), 0, len(data), 0xBAADF00D)
+        blobs += data
+    names = b"".join(_wstr(n) for n, _ in files)
+    return struct.pack("<4sI4sIQ", b"BTDX", 1, b"GNRL", len(files), off + len(blobs)) + records + blobs + names

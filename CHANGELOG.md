@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.2.0 (2026-11-20)
+
+### What's new
+
+sf-patch-day tells you, after a Starfield update, which of your SFSE plugins still load, and it tells mod authors whether the update changed anything their mod relies on. In 0.2.0, `drift init` reads your mod's compiled scripts. It adds the master script functions they call and the master quest stages they set to the mods file, so a script-only mod no longer starts with an empty file that has to be filled by hand.
+
+This needs sf-pex-tools 0.1.0 in a folder next to sf-patch-day (or `--pex-tools <folder>`). Without it, init works as before and says how to get the script part.
+
+### Example
+
+    > .\sf-patch-day.cmd drift init ..\MyMod\MyMod.esm -o mods.json
+    wrote mods.json: 0 overridden record(s), 40 master script function(s) your scripts call and 15 master quest(s) they set stages on, in 1 master(s)
+      read 4 of your mod's own script(s) with sf-pex-tools 0.1.0 (C:\temp\patchday-example\sf-pex-tools)
+      Starfield.esm: 15 record(s), 15 with quest stages, 40 function(s) in 15 script(s) from Starfield - Misc.ba2
+    Next: check the file, add anything else your mod relies on, then run drift snapshot (with sf-pex-tools, for the function checks).
+
+    > .\sf-patch-day.cmd drift snapshot --mods mods.json -o baseline.json
+    Starfield.esm: 15 record(s) (0 not found), highest own FormID 3FFD59, probe 3FFD49, 40 function(s)
+    wrote baseline.json
+
+    > .\sf-patch-day.cmd drift check --mods mods.json --baseline baseline.json
+    OK     Starfield.esm: unchanged since 2026-11-20 (MyMod.esm)
+    RESULT: no change (exit 0)
+
+The run is on a real Steam install, with a script-only mod of ours renamed MyMod.esm. In 0.1.3 the same mod gave an empty mods file. Every quest stage and function init found was then found again by snapshot in Starfield.esm and its scripts.
+
+### How it works
+
+- init reads the scripts the plugin attaches to its records, the `.pex` files under `Scripts\` next to the plugin, and those in the mod's own `<Mod> - <name>.ba2` archives. The masters' scripts come from their own archives in the Data folder and `--plugin-dir` folders.
+- Each master script function your scripts call is listed under the master script that defines it, with that master's archive in `ba2`. An inherited function goes under the parent script that defines it.
+- A `note:` line says when a call passes a different number of arguments than the installed master's function takes, or calls a function no master script defines now. Either means the mod was built against another game version.
+- Quests your scripts call `SetStage` or `SetCurrentStageID` on are listed with their stages when the quest is a script property your plugin fills. A quest your plugin overrides and attaches the script to counts too. Stages written in the script or filled as Int properties are listed, also when they are handed down through your script's own functions.
+- A stage number worked out while the game runs isn't listed, and the quest's `why` text says so. Quest alias and fragment scripts aren't read yet.
+- The output is the same for the same mod and game files, and the file is valid against `examples/mods.schema.json`. The format of the mods file hasn't changed.
+
+### Changes
+
+- `drift init` has a `--pex-tools <folder>` option, like `snapshot` and `check`. A folder that doesn't hold sf-pex-tools stops init with exit 3 before anything is written.
+- `drift init` refuses an existing output file (without `--force`) before it reads anything, instead of after.
+- New tests build tiny made-up scripts, script data and archives, and use sf-pex-tools' own made-up test archive as the master's scripts. They skip without sf-pex-tools.
+
+### Download
+
+Download `sf-patch-day-0.2.0.zip` and its `.sha256` file below, unzip it anywhere and follow the Install steps in the README. It needs Python 3.9 or newer and nothing else; sf-pex-tools 0.1.0 is optional.
+
 ## 0.1.3 (2026-11-20)
 
 ### What's new

@@ -16,14 +16,14 @@ Don't use it to edit plugins, turn mods on or off, or download anything. It does
 ## 2. Prerequisites
 
 - Python 3.9 or newer (`python --version`). No other packages.
-- Optional, for drift function checks only: sf-pex-tools 0.1.0 from
-  https://github.com/taosecurity/sf-pex-tools/releases.
+- Optional, for drift only (init reading the mod's scripts, and the function checks of snapshot and check):
+  sf-pex-tools 0.1.0 from https://github.com/taosecurity/sf-pex-tools/releases.
 
 ## 3. Install
 
 1. Download `sf-patch-day-<version>.zip` and its `.sha256` from https://github.com/taosecurity/sf-patch-day/releases.
-2. Check the hash: `certutil -hashfile sf-patch-day-0.1.3.zip SHA256` (Windows) or
-   `sha256sum sf-patch-day-0.1.3.zip` (Linux). It must match the `.sha256` file.
+2. Check the hash: `certutil -hashfile sf-patch-day-0.2.0.zip SHA256` (Windows) or
+   `sha256sum sf-patch-day-0.2.0.zip` (Linux). It must match the `.sha256` file.
 3. Unzip it. The folder holds `sf-patch-day.py`, `sf-patch-day.cmd` and `sf_patch_day\`.
 4. Optional: unzip sf-pex-tools 0.1.0 into a folder named `sf-pex-tools` next to the `sf-patch-day` folder.
 
@@ -36,7 +36,7 @@ python -I tests/test_sf_patch_day.py
 ```
 
 It must end with `OK` (some tests say `skipped` when sf-pex-tools isn't installed; that's fine). Then
-`python -I sf-patch-day.py --version` prints `sf-patch-day 0.1.3`.
+`python -I sf-patch-day.py --version` prints `sf-patch-day 0.2.0`.
 
 ## 5. Common tasks
 
@@ -52,15 +52,24 @@ Options go after the command name.
 | Check a Mod Organizer 2 mods folder | `python -I sf-patch-day.py dlls "%LOCALAPPDATA%\ModOrganizer\Starfield\mods"` |
 | Machine-readable report | add `--json` (dlls, drift check) |
 | Start a mods file from a mod's plugin | `python -I sf-patch-day.py drift init "<MyMod.esm>" -o mods.json` |
+| The same, naming the sf-pex-tools folder | `python -I sf-patch-day.py drift init "<MyMod.esm>" -o mods.json --pex-tools "<sf-pex-tools folder>"` |
 | Take a baseline | `python -I sf-patch-day.py drift snapshot --mods mods.json -o baseline.json` |
 | Check after an update | `python -I sf-patch-day.py drift check --mods mods.json --baseline baseline.json` |
 | Masters in a mod manager folder | add `--plugin-dir "<folder>"` (drift, fingerprint; repeatable) |
 | Probe FormIDs for in-game checks | `python -I sf-patch-day.py fingerprint "<Plugin.esm>"` |
 
-The mods file format is in README.md ("The mods file") and `examples/mods.schema.json`. After `drift init`, the
-author must add quest stages and script functions by hand; init only finds overridden records. When init finds
-nothing it can watch by name (no overridden master records with Editor IDs, or none whose master the plugin lists;
-the second case prints its own note: the plugin may be damaged or unusual), init still exits 0 but writes an empty
+The mods file format is in README.md ("The mods file") and `examples/mods.schema.json`. `drift init` lists the
+master records the plugin overrides. With sf-pex-tools (found through `--pex-tools`, `SF_PEX_TOOLS` or a
+`sf-pex-tools` folder next to sf-patch-day's folder) it also reads the mod's compiled scripts: those the plugin
+attaches, the `.pex` files under `Scripts\` next to the plugin, and those in `<Mod> - <name>.ba2` archives next to
+it. It adds the master script functions they call (`ba2` and `functions`) and the master quests they set stages on
+(`records` with `stages`); README.md "What init finds in your scripts" lists what it can't see. Without
+sf-pex-tools, init prints `note: scripts not read: ...` and the author adds those by hand. A `note:` line saying a
+call passes a different number of arguments than the installed master takes, or calls a function no master defines
+now, means the mod was built against another game version. A `--pex-tools` folder that doesn't hold sf-pex-tools
+stops init with exit 3 before anything is written. When init finds nothing it can watch by name (no overridden
+master records with Editor IDs, or none whose master the plugin lists, and nothing from the scripts; the second
+case prints its own note: the plugin may be damaged or unusual), init still exits 0 but writes an empty
 `"masters"` and says "has nothing to watch yet"; `drift snapshot` refuses that file (exit 3) until at least one entry
 is added.
 
@@ -87,4 +96,5 @@ is added.
 - Applies SFSE's loading rule only. A plugin that passes can still misbehave in game; "MAY FAIL" needs a test.
 - Doesn't judge DLLs without SFSE version data (ASI plugins, proxy DLLs).
 - SFSE doesn't support the Game Pass version of Starfield; dlls says so on Game Pass installs.
-- drift sees only what the mods file lists. It doesn't read the mod's scripts.
+- drift sees only what the mods file lists. init reads the mod's scripts only with sf-pex-tools, and can't see
+  quests or stage numbers worked out while the game runs, or quest alias and fragment scripts.

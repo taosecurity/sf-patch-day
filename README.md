@@ -20,7 +20,7 @@ shortened):
 
 ```
 > .\sf-patch-day.cmd dlls
-sf-patch-day 0.1.3 dlls
+sf-patch-day 0.2.0 dlls
 Game version: 1.16.244 (read from C:\Program Files (x86)\Steam\steamapps\common\Starfield\Starfield.exe)
 SFSE: 0.2.21 for this game version found (sfse_1_16_244.dll)
 Address Library: versionlib-1-16-244-0.bin found (C:\Program Files (x86)\Steam\steamapps\common\Starfield\Data\SFSE\Plugins)
@@ -77,19 +77,19 @@ needs Python 3.9 or newer.
 1. Install Python 3.11 or newer from [python.org](https://www.python.org/downloads/). On the first screen of the
    installer, tick **Add python.exe to PATH**. To check that it worked, open a new Command Prompt and type
    `python --version`. It should print a version number.
-2. Download `sf-patch-day-0.1.3.zip` and its `.sha256` file from the
+2. Download `sf-patch-day-0.2.0.zip` and its `.sha256` file from the
    [releases page](https://github.com/taosecurity/sf-patch-day/releases) and unzip the zip anywhere. If you want
-   to check the download, run `certutil -hashfile sf-patch-day-0.1.3.zip SHA256` (on Linux,
-   `sha256sum sf-patch-day-0.1.3.zip`) and compare the result with the `.sha256` file.
+   to check the download, run `certutil -hashfile sf-patch-day-0.2.0.zip SHA256` (on Linux,
+   `sha256sum sf-patch-day-0.2.0.zip`) and compare the result with the `.sha256` file.
 3. Open the unzipped folder in File Explorer, click the address bar at the top, type `cmd` and press Enter. A
    Command Prompt window opens in that folder, ready for the commands in this README.
-4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.1.3`.
+4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.2.0`.
 
 `.\sf-patch-day.cmd` works in both Command Prompt and PowerShell. It only starts `python -I sf-patch-day.py` with the
 options you give it, so on Linux type `python3 -I sf-patch-day.py` instead. To check the install
 fully, run the tests: `python -I tests/test_sf_patch_day.py`. They end with `OK`.
 
-**Optional, for `drift` function checks only:** download [sf-pex-tools 0.1.0](https://github.com/taosecurity/sf-pex-tools/releases)
+**Optional, for `drift` script reading and function checks only:** download [sf-pex-tools 0.1.0](https://github.com/taosecurity/sf-pex-tools/releases)
 the same way and unzip it into a folder named `sf-pex-tools` next to the `sf-patch-day` folder. You can also point
 to it with `--pex-tools <folder>` or the `SF_PEX_TOOLS` environment variable.
 
@@ -105,6 +105,7 @@ to it with `--pex-tools <folder>` or the `SF_PEX_TOOLS` environment variable.
 - **Plugin:** a mod's data file (`.esm`, `.esp` or `.esl`). It adds or changes records in the game.
 - **Master:** a plugin that another plugin needs loaded before it. Starfield.esm is the master of nearly every mod.
 - **Record:** one thing in a plugin, such as a weapon, a quest, a location or a setting.
+- **Override:** a later plugin's copy of a record from an earlier one, which replaces it in the game.
 - **FormID:** a record's number, such as `0002B560`. The first two digits depend on the load order.
 - **Editor ID:** a record's readable name, such as `MQ101`, used by the Creation Kit and xEdit.
 - **Quest stage:** a numbered step of a quest. Scripts move a quest on by setting its stages.
@@ -154,7 +155,7 @@ author names changed, output shortened):
 
 ```
 > .\sf-patch-day.cmd dlls --game-version 1.16.250
-sf-patch-day 0.1.3 dlls
+sf-patch-day 0.2.0 dlls
 Game version: 1.16.250 (given with --game-version)
 SFSE: NOT FOUND for this game version (sfse_1_16_250.dll is missing). Every SFSE plugin waits for an SFSE update from its authors.
 Address Library: versionlib-1-16-250-0.bin NOT FOUND in the folders checked (plugins that use it wait for its update)
@@ -194,14 +195,28 @@ sf-patch-day takes a baseline and, after an update, tells you whether any of the
 ```
 
 1. `init` lists every master record your plugin overrides (ships a changed copy of). Any change to those means
-   rebuild. It can't see what your scripts use, so add those by hand (see [The mods file](#the-mods-file)). When
-   init finds nothing it can watch by name (no overridden master records with Editor IDs, or none whose master the
-   plugin lists, which it notes as possibly damaged or unusual), it writes a mods file with nothing in it yet and
-   says so: add at least one entry before you run `snapshot`.
+   rebuild. With sf-pex-tools installed, it also reads your mod's compiled scripts and adds the master script
+   functions they call and the master quest stages they set (see [What init finds in your scripts](#what-init-finds-in-your-scripts)).
+   Without sf-pex-tools it says so, and you add those by hand (see [The mods file](#the-mods-file)).
+
+   When init finds nothing it can watch by name (no overridden master records with Editor IDs, or none whose
+   master the plugin lists, which it notes as possibly damaged or unusual, and nothing from the scripts), it writes
+   a mods file with nothing in it yet and says so: add at least one entry before you run `snapshot`.
 2. `snapshot` records facts about each listed record: its FormID, type, a hash of its contents, its quest stages
    and condition count, and the argument count of each listed script function. Take it when your mod is built and
    working. Keep `mods.json` and `baseline.json` with your mod's source.
 3. `check` compares the installed masters with the baseline.
+
+A real `init` run on a script-only mod that changes no master records (mod name changed), with sf-pex-tools in a
+folder next to sf-patch-day:
+
+```
+> .\sf-patch-day.cmd drift init ..\MyMod\MyMod.esm -o mods.json
+wrote mods.json: 0 overridden record(s), 40 master script function(s) your scripts call and 15 master quest(s) they set stages on, in 1 master(s)
+  read 4 of your mod's own script(s) with sf-pex-tools 0.1.0 (C:\temp\patchday-example\sf-pex-tools)
+  Starfield.esm: 15 record(s), 15 with quest stages, 40 function(s) in 15 script(s) from Starfield - Misc.ba2
+Next: check the file, add anything else your mod relies on, then run drift snapshot (with sf-pex-tools, for the function checks).
+```
 
 A real run, with a mods file that lists one quest and one global from Starfield.esm:
 
@@ -231,7 +246,9 @@ Options:
 
 - `--data <folder>`: the game's Data folder (found automatically).
 - `--plugin-dir <folder>`: a folder searched first for masters. Repeat it for several.
-- `--pex-tools <folder>`: where sf-pex-tools is.
+- `--pex-tools <folder>`: where sf-pex-tools is. `init` reads your scripts with it; `snapshot` and `check` compare
+  the listed functions with it. Without this option, sf-patch-day looks in `SF_PEX_TOOLS` and then in a
+  `sf-pex-tools` folder next to its own.
 - `--json`: print the `check` report as JSON.
 - `--force`: let `init` and `snapshot` overwrite their files. Take a new baseline only after you rebuild your mod,
   never instead of `check`.
@@ -272,6 +289,31 @@ is a made-up example, and [examples/mods.schema.json](examples/mods.schema.json)
   Starfield.esm is much faster. `why` and `used_by` are notes shown in the report.
 - `functions`: the master's script functions your scripts call by name, listed by script path inside `ba2`. These
   checks need sf-pex-tools.
+
+### What init finds in your scripts
+
+With sf-pex-tools, `init` reads the scripts your plugin attaches to its records and the compiled scripts (`.pex`)
+your mod ships: loose ones under `Scripts\` next to the plugin, and the ones in its own archives
+(`MyMod - Main.ba2` and other `MyMod - <name>.ba2` files next to it). A loose script your scripts use that no
+master's archive holds counts as yours too. The masters' scripts come from their own archives (such as
+`Starfield - Misc.ba2`) in the Data folder and `--plugin-dir` folders. From the code it adds:
+
+- Each master script function your scripts call, under the script that defines it. A call to a function a script
+  inherits is listed under the parent that defines it, such as `scripts/scriptobject.pex` for `StartTimer`. The
+  master's archive goes in `ba2`. If a call passes a different number of arguments than the installed master's
+  function takes, or calls a function no master script defines now, init says so in a `note:` line: your mod was
+  built against another version of the game, so rebuild it.
+- Each master quest your scripts call `SetStage` or `SetCurrentStageID` on, with the stage numbers, when the quest
+  is a script property your plugin fills (or the quest itself, when your plugin attaches the script to an override
+  of a master quest). A stage number counts when it is written in the script or comes from an Int property your
+  plugin fills. Quests and stages handed down through your script's own functions, such as
+  `Step(MyQuest, 100)` calling `akQuest.SetStage(aiStage)`, are followed too. A quest your plugin overrides keeps its
+  `copied: true` record and gets the stages added.
+
+What it can't see: a quest or stage number worked out while the game runs (a variable, a calculation, a quest
+found with `Game.GetForm`), quests in quest alias scripts and fragment scripts, and calls made through another
+object's own functions. Such a quest is left out, and a quest with an unknown stage says so in its `why` text.
+Check the file and add anything else by hand. The same mod and the same game files always give the same file.
 
 ## fingerprint
 
@@ -334,7 +376,9 @@ the run's exit code. Nothing is logged unless you ask. Include the log when you 
 - `dlls` applies SFSE's own loading rule. A plugin that passes it can still misbehave if the update changed the
   game code it patches, and only its author can say. "MAY FAIL" plugins need a test.
 - It doesn't judge DLLs without SFSE version data (ASI plugins, proxy DLLs).
-- `drift` sees only what you list (plus the overrides `init` finds). It doesn't read your scripts.
+- `drift` sees only what the mods file lists. `init` fills it from your overrides and, with sf-pex-tools, from your
+  compiled scripts, but it can't see quests or stage numbers worked out while the game runs (see
+  [What init finds in your scripts](#what-init-finds-in-your-scripts)).
 - It doesn't download updates, and it doesn't turn plugins off for you.
 
 ## Found a mistake?
@@ -346,7 +390,7 @@ Open an issue: https://github.com/taosecurity/sf-patch-day/issues. Changes are l
 
 sf-patch-day was made by Richard Bejtlich. It applies the plugin loading rule of
 [SFSE](https://sfse.silverlock.org), the Starfield Script Extender, and reads the Address Library files that SFSE
-plugin authors use; it ships neither. Script function checks use
+plugin authors use; it ships neither. Reading scripts and checking script functions use
 [sf-pex-tools](https://github.com/taosecurity/sf-pex-tools) when it's installed. Starfield belongs to Bethesda
 Softworks, and sf-patch-day ships no game files.
 

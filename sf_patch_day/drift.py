@@ -377,14 +377,19 @@ def result(lines):
 
 
 # ---- init: a starting mods file from a mod's own plugin ----------------------------------------------------------
-def init(mod_path, dirs):
-    """(mods dict, notes) listing every master record the mod overrides, as copied records."""
+def init(mod_path, dirs, tools=None, tools_msg=""):
+    """(mods dict, notes, summary) listing every master record the mod overrides, as copied records, and, when
+    sf-pex-tools is given (tools), the master script functions the mod's scripts call and the master quest stages
+    they set. summary: counts for the report: "records" overridden, "functions" called, "quests" added for their
+    stages, "staged" master quests whose stages the scripts set (added or overridden), "scripts" of the mod's own
+    read (None without sf-pex-tools)."""
     clear_cache()
     check_copies(mod_path)  # before reading it: a second copy may explain a failure
     try:
         with Plugin(mod_path, dirs) as p:
             overrides = p.overrides()
             unknown = list(p.unknown)
+            header_masters = list(p.masters)
     except (OSError, PluginError) as e:
         raise DriftError(f"{e}. Fix: check the path to your mod's plugin.")
     mod = os.path.basename(mod_path)
@@ -407,8 +412,88 @@ def init(mod_path, dirs):
                      ", ".join(f"{n} {s}" for s, n in sorted(no_edid.items())))
     if no_master:
         notes.append(f"{no_master} record(s) point at a master the plugin doesn't list (damaged or unusual)")
-    if not masters:
-        notes.append("the plugin overrides no master records with Editor IDs; add records your scripts use by hand")
-    return {"mod": mod, "about": f"Made by sf-patch-day {VERSION} drift init from {mod}. Add quest stages your "
-                                 f"scripts set and master script functions they call by name; see the README.",
-            "masters": masters}, notes
+    summary = {"records": sum(len(s["records"]) for s in masters.values()), "functions": 0, "quests": 0,
+               "staged": 0, "scripts": None}
+    if tools is None:
+        notes.append(f"scripts not read: {tools_msg or 'sf-pex-tools not found'}. With sf-pex-tools, init also "
+                     f"lists the master script functions your scripts call and the master quest stages they set")
+        if not masters:
+            notes.append("the plugin overrides no master records with Editor IDs; add records your scripts use by "
+                         "hand")
+        about = (f"Made by sf-patch-day {VERSION} drift init from {mod}, without sf-pex-tools. Add quest stages your "
+                 f"scripts set and master script functions they call by name; see the README.")
+    else:
+        _add_script_part(mod_path, dirs, tools, masters, notes, summary)
+        masters = _in_load_order(masters, header_masters)
+        if not masters:
+            notes.append("found nothing to watch: the plugin overrides no master records with Editor IDs, and its "
+                         "scripts call no master script functions and set no master quest stages")
+        about = (f"Made by sf-patch-day {VERSION} drift init from {mod}: the master records it overrides, the master "
+                 f"script functions its scripts call and the master quest stages they set. Add anything else it "
+                 f"relies on by hand; see the README.")
+    return {"mod": mod, "about": about, "masters": masters}, notes, summary
+
+
+def _in_load_order(masters, header_masters):
+    """The masters found from overrides first (as before), then the others in the plugin's master order."""
+    order = {m.lower(): i for i, m in enumerate(header_masters)}
+    old = [m for m, s in masters.items() if not s.get("_new")]
+    new = sorted((m for m, s in masters.items() if s.get("_new")),
+                 key=lambda m: (order.get(m.lower(), 1 << 20), m.lower()))
+    out = {}
+    for m in old + new:
+        out[m] = masters[m]
+        out[m].pop("_new", None)
+    return out
+
+
+def _add_script_part(mod_path, dirs, tools, masters, notes, summary):
+    """Adds the script findings to `masters` (in place)."""
+    from . import scripts
+    mod = os.path.basename(mod_path)
+    try:
+        funcs, quests, snotes, stats = scripts.analyze(mod_path, dirs, tools)
+        edids = scripts.quest_edids(quests, mod_path, dirs) if quests else {}
+    except scripts.ScriptError as e:
+        notes.append(f"scripts not read: {e}")
+        return
+    summary["scripts"] = stats["own"]
+    notes += snotes
+
+    def spec_for(master):
+        if master not in masters:
+            masters[master] = {"used_by": [mod], "records": [], "_new": True}
+        return masters[master]
+
+    no_edid = 0
+    for (master, fid), q in sorted(quests.items(), key=lambda kv: (kv[0][0].lower(), str(edids.get(kv[0])), kv[0][1])):
+        edid = edids.get((master, fid))
+        if not edid:
+            no_edid += 1
+            log.info("drift", f"{master} quest {fid:08X} (in {mod}'s numbering): no Editor ID found")
+            continue
+        spec = spec_for(master)
+        summary["staged"] += 1
+        by = ", ".join(sorted(q["by"], key=str.lower))
+        by = f"stages set by {'scripts' if len(q['by']) > 1 else 'script'} {by}"
+        rec = next((r for r in spec["records"] if r["edid"].lower() == edid.lower()), None)
+        if rec is None:
+            rec = {"edid": edid, "type": "QUST"}
+            spec["records"].append(rec)
+            summary["quests"] += 1
+            rec["why"] = by[0].upper() + by[1:]
+        else:
+            rec["why"] += f"; {by}"
+        if q["stages"]:
+            rec["stages"] = sorted(set(rec.get("stages", [])) | q["stages"])
+        if q["unknown"]:
+            rec["why"] += " (a stage number not known before the game runs isn't listed)"
+    if no_edid:
+        notes.append(f"{no_edid} master quest(s) the scripts set stages on have no Editor ID or weren't found in "
+                     f"their master, so they can't be watched by name")
+    for master in sorted(funcs, key=str.lower):
+        spec = spec_for(master)
+        spec["ba2"] = funcs[master]["ba2"]
+        spec["functions"] = {s: sorted(f, key=str.lower)
+                             for s, f in sorted(funcs[master]["scripts"].items(), key=lambda kv: kv[0].lower())}
+        summary["functions"] += sum(len(v) for v in spec["functions"].values())

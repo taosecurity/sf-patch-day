@@ -57,6 +57,8 @@ def build_parser():
     di.add_argument("plugin", help="your mod's plugin (.esm/.esp/.esl)")
     di.add_argument("-o", "--out", required=True, metavar="FILE", help="the mods file to write")
     di.add_argument("--force", action="store_true", help="overwrite FILE if it exists")
+    di.add_argument("--pex-tools", metavar="FOLDER", help="the sf-pex-tools folder (needed to read your mod's "
+                                                         "scripts)")
     where(di)
     common(di)
     for name, helptext in (("snapshot", "write a baseline from the installed masters"),
@@ -205,18 +207,36 @@ def cmd_drift(args):
     dirs, data = data_dirs(args)
     if args.drift_cmd == "init":
         refuse_game_folder(args.out, data)
-        mods, notes = drift.init(args.plugin, dirs)
+        if os.path.exists(args.out) and not args.force:  # before reading the scripts
+            raise drift.DriftError(f"{args.out} already exists. Fix: add --force to overwrite it, or pick another "
+                                   f"name.")
+        tools, tools_msg = pextools.find(args.pex_tools)
+        if tools is None and args.pex_tools:
+            return fail(tools_msg)
+        mods, notes, summary = drift.init(args.plugin, dirs, tools, tools_msg)
         write_json(args.out, mods, force=args.force)
-        n = sum(len(s["records"]) for s in mods["masters"].values())
-        say(f"wrote {args.out}: {n} overridden record(s) in {len(mods['masters'])} master(s)")
+        if tools is None:
+            say(f"wrote {args.out}: {summary['records']} overridden record(s) in {len(mods['masters'])} master(s)")
+        else:
+            say(f"wrote {args.out}: {summary['records']} overridden record(s), {summary['functions']} master script "
+                f"function(s) your scripts call and {summary['staged']} master quest(s) they set stages on, in "
+                f"{len(mods['masters'])} master(s)")
+            if summary["scripts"] is not None:
+                say(f"  read {summary['scripts']} of your mod's own script(s) with {tools_msg}")
         for m, s in mods["masters"].items():
-            say(f"  {m}: {len(s['records'])} record(s)")
+            staged = sum(1 for r in s["records"] if r.get("stages"))
+            nf = sum(len(v) for v in s.get("functions", {}).values())
+            say(f"  {m}: {len(s['records'])} record(s)" + (f", {staged} with quest stages" if staged else "")
+                + (f", {nf} function(s) in {len(s['functions'])} script(s) from {s['ba2']}" if nf else ""))
         for note in notes:
             say(f"note: {note}")
         say_warnings()
-        if mods["masters"]:
-            say("Next: add the quest stages your scripts set and the master script functions they call, then run "
-                "drift snapshot.")
+        if mods["masters"] and tools is None:
+            say("Next: add the quest stages your scripts set and the master script functions they call (or run init "
+                "again with sf-pex-tools), then run drift snapshot.")
+        elif mods["masters"]:
+            say("Next: check the file, add anything else your mod relies on, then run drift snapshot "
+                "(with sf-pex-tools, for the function checks).")
         else:  # an empty file: snapshot would refuse it, so say what it needs first
             say(f"Next: {args.out} has nothing to watch yet. Add at least one master with the records, quest stages "
                 f"or script functions your mod relies on (README section 'The mods file', "
