@@ -201,7 +201,7 @@ def cmd_dlls(args):
 
 def cmd_drift(args):
     if not getattr(args, "drift_cmd", None):  # a bare "drift" (main() also stops it first): the help and RESULT
-        return missing_step(args)
+        return missing_step(args, drift_step=True)
     dirs, data = data_dirs(args)
     if args.drift_cmd == "init":
         refuse_game_folder(args.out, data)
@@ -293,9 +293,9 @@ def say_warnings(always=False):
         say(f"WARNING: {w}")
 
 
-def missing_step(args):
+def missing_step(args, drift_step=False):
     """A missing command or drift step: the help on stdout, then the RESULT line on stderr, exit 3."""
-    cmd = getattr(args, "cmd", None)
+    cmd = drift_step or getattr(args, "cmd", None)
     try:
         build_parser().parse_args(["drift", "--help"] if cmd else ["--help"])
     except SystemExit:

@@ -5,6 +5,7 @@
 Every DLL and plugin here is made up by tests/makers.py. The function checks use sf-pex-tools' own made-up test
 archive; they need sf-pex-tools (SF_PEX_TOOLS, or a sf-pex-tools folder next to this repo) and skip without it.
 """
+import argparse
 import contextlib
 import io
 import json
@@ -617,6 +618,12 @@ class TestDrift(Temp):
         self.assertEqual(code, 3)
         self.assertIn("usage:", out.getvalue())
         self.assertIn("RESULT: CANNOT CHECK: no drift step given", err.getvalue())
+        # A hand-built Namespace with no "cmd" still gets the drift message, not "no command given".
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.cmd_drift(argparse.Namespace(drift_cmd=None))
+        self.assertEqual(code, 3)
+        self.assertIn("no drift step given", err.getvalue())
         # A run that stops on an error ends its log with that exit code, not "done".
         code, out, err = run_err("fingerprint", "x.esm", "--verbose", "--data", self.p("nowhere"))
         self.assertEqual(code, 3)
