@@ -181,6 +181,25 @@ def quest_tail(script="", props=(), fragments=(), aliases=()):
     return out
 
 
+def fragment_tail(sig, script="", props=(), fragments=(), phases=(), full_empty=False):
+    """The part of an INFO, PACK, SCEN, PERK or TMLM VMAD after its scripts, as xEdit's Starfield definitions lay it
+    out: a version byte; for INFO/PACK/SCEN a flags byte (one fragment per flag set), the script entry and the
+    fragments; for PERK/TMLM the script entry and a u16 count of fragments, each with a u32 index; SCEN then has a
+    u16 count of phase fragments (flag byte, u32 index). fragments and phases: [(script name, function name)].
+    An empty script name is written as Mutagen writes it (the name only) or, with full_empty, as xEdit reads it
+    (a status byte and a property count too)."""
+    entry = script_entry(script, props) if script or full_empty else _wstr("")
+    frag = [b"\x00" + _wstr(s) + _wstr(f) for s, f in fragments]
+    if sig in ("INFO", "PACK", "SCEN"):
+        out = b"\x03" + bytes([(1 << len(fragments)) - 1]) + entry + b"".join(frag)
+        if sig == "SCEN":
+            out += struct.pack("<H", len(phases)) + b"".join(
+                struct.pack("<BI", 1, i) + b"\x00" + _wstr(s) + _wstr(f) for i, (s, f) in enumerate(phases))
+        return out
+    return b"\x03" + entry + struct.pack("<H", len(frag)) + b"".join(
+        struct.pack("<I", i) + x for i, x in enumerate(frag))
+
+
 def vmad(scripts, tail=b""):
     """A VMAD field (version 6, object format 2): scripts = [(script name, [(property, type, value)])]. tail is the
     data after the scripts (quest_tail() for a quest's fragment and alias scripts)."""

@@ -64,7 +64,8 @@ master records the plugin overrides. With sf-pex-tools (found through `--pex-too
 names (attached, fragment and alias scripts), the `.pex` files under `Scripts\` next to the plugin, and those in
 `<Mod> - <name>.ba2` archives next to it (the PC archive only, when `_xbox` or `_ps5` copies sit beside it). Run
 it on the plugin in the mod's own folder: in the shared Data folder only loose scripts in the mod's own namespace,
-or named by its plugin, count as the mod's. It adds the master script functions they call (`ba2` and
+or, without a namespace, named by its plugin or used by its own scripts (a helper it calls, a parent it extends),
+count as the mod's. It adds the master script functions they call (`ba2` and
 `functions`) and the master quests they set stages on (`records` with `stages`); README.md "What init finds in your scripts" lists what it can't see. Without
 sf-pex-tools, init prints `note: scripts not read: ...` and the author adds those by hand. A `note:` line saying a
 call passes a different number of arguments than the installed master takes, or calls a function no master defines

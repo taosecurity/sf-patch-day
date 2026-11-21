@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import sys
 import tempfile
 import unittest
@@ -768,6 +769,30 @@ class TestScriptParts(Temp):
         self.assertEqual(scripts.vmad_parts(mk.vmad([("A", [])])[6:], "QUST")[1:], ([], None))
         self.assertEqual(scripts.vmad_parts(field[6:], "ACTI")[1:], ([], None))
 
+    def test_vmad_fragment_tails_of_other_records(self):
+        # INFO, PACK, SCEN, PERK and TMLM: the fragment script entry is read by the same helper as a quest's. With a
+        # name it has a status byte and properties. With an empty name, Mutagen writes the name only (as a quest's
+        # fragment script always is) and xEdit reads a full entry: both layouts are read and end at the field's end.
+        frags = [("TIF_A", "Fragment_Begin"), ("TIF_B", "Fragment_End")]
+        for sig in ("INFO", "PACK", "SCEN", "PERK", "TMLM"):
+            phases = [("SF_Phase", "Fragment_Phase_01")] if sig == "SCEN" else []
+            names = [(n, {}, "fragment") for n, _ in frags + phases]
+            for case, kw, want in (
+                    ("named", {"script": "Fragments:X", "props": [("Q", 1, 0x01000800)]},
+                     [("Fragments:X", {"q": ("obj", 0x01000800)}, "fragment")] + names),
+                    ("empty, Mutagen", {}, names),
+                    ("empty, xEdit", {"full_empty": True}, names)):
+                with self.subTest(sig=sig, case=case):
+                    tail = mk.fragment_tail(sig, fragments=frags, phases=phases, **kw)
+                    field = mk.vmad([("SM:Attached", [])], tail=tail)[6:]
+                    self.assertEqual(scripts.vmad_parts(field, sig), ([("SM:Attached", {})], want, None))
+        # A quest alias script with an empty name, as Mutagen writes it: the alias after it is still read.
+        tail = (b"\x03" + struct.pack("<H", 0) + mk._wstr("") + struct.pack("<H", 2)
+                + struct.pack("<HhI", 0, 0, 0) + struct.pack("<HHH", 6, 2, 1) + mk._wstr("")
+                + struct.pack("<HhI", 0, 1, 0) + struct.pack("<HHH", 6, 2, 1) + mk.script_entry("SM:AliasB", []))
+        field = mk.vmad([], tail=tail)[6:]
+        self.assertEqual(scripts.vmad_parts(field, "QUST"), ([], [("SM:AliasB", {}, "alias")], None))
+
     def test_console_archives_left_out(self):
         d = self.p("d")
         write(os.path.join(d, "MyMod - Main.ba2"), mk.ba2([]))
@@ -1121,6 +1146,31 @@ class TestInitScriptOwnership(Temp):
         self.assertEqual(summary["scripts"], 2)
         self.assertTrue(any("holds loose copies of 1 master script(s) your scripts call (scripts/TM/Base.pex)" in n
                             for n in notes), notes)
+
+    def test_shared_data_folder_bare_helper_reached_by_code(self):
+        # The plugin is in the Data folder and names only ScriptModMain (no namespace). Its helper ScriptModHelper,
+        # reached only through a callstatic, and its parent ScriptModBase are the mod's too (0.1.x read them), so
+        # the helper's call to TM:Base.Hello is found. Another mod's bare loose script nothing of ours references
+        # isn't read, and a loose bare copy of a master archive script the helper reaches stays the master's.
+        data = self.p("Data")
+        tm_world(data)
+        write(os.path.join(data, "TestMaster - Extra.ba2"), mk.ba2([("scripts/MasterBare.pex", mk.pex("MasterBare",
+                                                                                                  "ScriptObject"))]))
+        scr = os.path.join(data, "Scripts")
+        write(os.path.join(scr, "ScriptModMain.pex"), calls("ScriptModMain", "ScriptModBase",
+                                                            ("ScriptModHelper", "Go", [])))
+        write(os.path.join(scr, "ScriptModBase.pex"), calls("ScriptModBase", "Quest", ("TM:Api", "Pong", [])))
+        write(os.path.join(scr, "ScriptModHelper.pex"), calls("ScriptModHelper", "ScriptObject",
+                                                              ("TM:Base", "Hello", []),
+                                                              variables=[("Other", "MasterBare")]))
+        write(os.path.join(scr, "MasterBare.pex"), b"someone's loose copy: not read")
+        write(os.path.join(scr, "OtherModScript.pex"), b"another mod's script: not read")
+        mod = self.mod_plugin(os.path.join(data, "ScriptMod.esm"), vmad=mk.vmad([("ScriptModMain", [])]))
+        mods, notes, summary = drift.init(mod, [data], TOOLS)
+        self.assertEqual(mods["masters"]["TestMaster.esm"]["functions"],
+                         {"scripts/TM/Api.pex": ["Pong"], "scripts/TM/Base.pex": ["Hello"]}, notes)
+        self.assertEqual(summary["scripts"], 3)
+        self.assertFalse([n for n in notes if "couldn't read" in n], notes)
 
     def test_failed_script_part_says_so(self):
         data, src = self.p("Data"), self.p("src")
