@@ -312,8 +312,9 @@ Where your plugin sits matters for loose scripts:
   `MyMod:QuestScript`) is one your plugin's scripts or your archive use and no master uses, or, for a script with
   no namespace or a `Fragments:` script, when your plugin names it or one of your mod's own scripts uses it (as a
   helper it calls with `callstatic` or a parent it extends; a type it only declares isn't enough). A `note:` line
-  lists the scripts taken in that way. A helper whose functions are all native (the script of an SFSE plugin,
-  whose code is in its DLL) is left out: it's another mod's, and there's no code in it to read.
+  lists the scripts taken in that way.
+- There, a helper whose functions are all native (the script of an SFSE plugin, whose code is in its DLL) is left
+  out: it's another mod's, and there's no code in it to read.
 - In the Data folder, a master installed loose is recognized by the scripts its own records name. A loose copy of
   a master script there could be any mod's, so init reads the master's archive copy and says so in a `note:` line.
 - Settled limits in the shared Data folder: a bare helper taken in through `callstatic` or a parent can bring in
@@ -342,13 +343,18 @@ above 65535, a quest found with `Game.GetForm` or `GetOwningQuest()`), and calls
 functions. Such a quest is left out, and a quest with an unknown stage says so in its `why` text.
 
 A loose script in the Data folder that doesn't match the rules above is left out; to have init read all of your
-loose scripts, run it on the plugin in your own folder. Script properties of type Var (which the Creation Kit can't fill) are skipped. A
-mod with more than 5,000 scripts of its own is read up to that limit, with a `note:` line that says at least how many
-more weren't read (the scripts those reference aren't found, so there may be more). A script that wasn't read still
-counts as your mod's for the records it's attached to. When a record's fragment scripts can be read two ways that
-both fit (Mutagen and xEdit lay out an empty fragment script name differently), init uses the
-usual layout for that record type and says so in a `note:` line with the record type and FormID. Check the file and add
-anything else by hand. The same mod and the same game files always give the same file.
+loose scripts, run it on the plugin in your own folder. Script properties of type Var (which the Creation Kit
+can't fill) are skipped.
+
+A mod with more than 5,000 scripts of its own is read up to that limit, with a `note:` line that says at least how
+many more weren't read (the scripts those reference aren't found, so there may be more). A script that wasn't read
+still counts as your mod's for the records it's attached to.
+
+When a record's fragment scripts can be read two ways that both fit (Mutagen and xEdit lay out an empty fragment
+script name differently), init uses the usual layout for that record type and says so in a `note:` line with the
+record type and FormID.
+
+Check the file and add anything else by hand. The same mod and the same game files always give the same file.
 
 ## fingerprint
 
