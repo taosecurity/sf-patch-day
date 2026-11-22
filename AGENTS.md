@@ -22,8 +22,8 @@ Don't use it to edit plugins, turn mods on or off, or download anything. It does
 ## 3. Install
 
 1. Download `sf-patch-day-<version>.zip` and its `.sha256` from https://github.com/taosecurity/sf-patch-day/releases.
-2. Check the hash: `certutil -hashfile sf-patch-day-0.2.0.zip SHA256` (Windows) or
-   `sha256sum sf-patch-day-0.2.0.zip` (Linux). It must match the `.sha256` file.
+2. Check the hash: `certutil -hashfile sf-patch-day-0.2.1.zip SHA256` (Windows) or
+   `sha256sum sf-patch-day-0.2.1.zip` (Linux). It must match the `.sha256` file.
 3. Unzip it. The folder holds `sf-patch-day.py`, `sf-patch-day.cmd` and `sf_patch_day\`.
 4. Optional: unzip sf-pex-tools 0.1.0 into a folder named `sf-pex-tools` next to the `sf-patch-day` folder.
 
@@ -36,7 +36,7 @@ python -I tests/test_sf_patch_day.py
 ```
 
 It must end with `OK` (some tests say `skipped` when sf-pex-tools isn't installed; that's fine). Then
-`python -I sf-patch-day.py --version` prints `sf-patch-day 0.2.0`.
+`python -I sf-patch-day.py --version` prints `sf-patch-day 0.2.1`.
 
 ## 5. Common tasks
 
@@ -65,7 +65,7 @@ names (attached, fragment and alias scripts), the `.pex` files under `Scripts\` 
 `<Mod> - <name>.ba2` archives next to it (the PC archive only, when `_xbox` or `_ps5` copies sit beside it). Run
 it on the plugin in the mod's own folder: in the shared Data folder only loose scripts in the mod's own namespace,
 or, without a namespace, named by its plugin or used by its own scripts (a helper it calls, a parent it extends),
-count as the mod's. It adds the master script functions they call (`ba2` and
+count as the mod's; a helper whose functions are all native (an SFSE plugin's script) doesn't. It adds the master script functions they call (`ba2` and
 `functions`) and the master quests they set stages on (`records` with `stages`); README.md "What init finds in your scripts" lists what it can't see. Without
 sf-pex-tools, init prints `note: scripts not read: ...` and the author adds those by hand. A `note:` line saying a
 call passes a different number of arguments than the installed master takes, or calls a function no master defines

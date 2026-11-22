@@ -218,7 +218,7 @@ def pex(name, parent="", variables=(), properties=(), functions=()):
     """A tiny compiled Papyrus script (PEX 3.12), made up for the tests.
     variables: [(name, type)]; properties: [(name, type, backing variable)] (auto properties);
     functions: [(name, [(param, type)], [(local, type)], [(op, [arg, ...])])] in the empty state, where an argument
-    is "ident:x", "str:text", "int:3" or "None"."""
+    is "ident:x", "str:text", "int:3" or "None". A function may have a fifth item, its flags byte (0x2 = native)."""
     strings = []
 
     def s(text):
@@ -238,8 +238,8 @@ def pex(name, parent="", variables=(), properties=(), functions=()):
             return b"\x03" + struct.pack("<i", int(text))
         raise ValueError(arg)
 
-    def func(params, locals_, code):
-        out = s("None") + s("") + struct.pack("<IB", 0, 0)
+    def func(params, locals_, code, flags=0):
+        out = s("None") + s("") + struct.pack("<IB", 0, flags)
         out += struct.pack("<H", len(params)) + b"".join(s(n) + s(t) for n, t in params)
         out += struct.pack("<H", len(locals_)) + b"".join(s(n) + s(t) for n, t in locals_)
         out += struct.pack("<H", len(code))
@@ -258,7 +258,7 @@ def pex(name, parent="", variables=(), properties=(), functions=()):
     obj += struct.pack("<H", len(properties)) + b"".join(s(n) + s(t) + s("") + struct.pack("<IB", 0, 7) + s(v)
                                                          for n, t, v in properties)
     obj += struct.pack("<H", 1) + s("") + struct.pack("<H", len(functions))
-    obj += b"".join(s(n) + func(p, lo, c) for n, p, lo, c in functions)
+    obj += b"".join(s(f[0]) + func(*f[1:]) for f in functions)
     body = struct.pack("<H", 0)  # user flags
     body += struct.pack("<H", 1) + s(name) + struct.pack("<I", len(obj) + 4) + obj
     head = struct.pack("<IBBHQ", 0xFA57C0DE, 3, 12, 4, 0) + _wstr(name + ".psc") + _wstr("test") + _wstr("test")

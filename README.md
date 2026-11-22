@@ -20,7 +20,7 @@ shortened):
 
 ```
 > .\sf-patch-day.cmd dlls
-sf-patch-day 0.2.0 dlls
+sf-patch-day 0.2.1 dlls
 Game version: 1.16.244 (read from C:\Program Files (x86)\Steam\steamapps\common\Starfield\Starfield.exe)
 SFSE: 0.2.21 for this game version found (sfse_1_16_244.dll)
 Address Library: versionlib-1-16-244-0.bin found (C:\Program Files (x86)\Steam\steamapps\common\Starfield\Data\SFSE\Plugins)
@@ -77,13 +77,13 @@ needs Python 3.9 or newer.
 1. Install Python 3.11 or newer from [python.org](https://www.python.org/downloads/). On the first screen of the
    installer, tick **Add python.exe to PATH**. To check that it worked, open a new Command Prompt and type
    `python --version`. It should print a version number.
-2. Download `sf-patch-day-0.2.0.zip` and its `.sha256` file from the
+2. Download `sf-patch-day-0.2.1.zip` and its `.sha256` file from the
    [releases page](https://github.com/taosecurity/sf-patch-day/releases) and unzip the zip anywhere. If you want
-   to check the download, run `certutil -hashfile sf-patch-day-0.2.0.zip SHA256` (on Linux,
-   `sha256sum sf-patch-day-0.2.0.zip`) and compare the result with the `.sha256` file.
+   to check the download, run `certutil -hashfile sf-patch-day-0.2.1.zip SHA256` (on Linux,
+   `sha256sum sf-patch-day-0.2.1.zip`) and compare the result with the `.sha256` file.
 3. Open the unzipped folder in File Explorer, click the address bar at the top, type `cmd` and press Enter. A
    Command Prompt window opens in that folder, ready for the commands in this README.
-4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.2.0`.
+4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.2.1`.
 
 `.\sf-patch-day.cmd` works in both Command Prompt and PowerShell. It only starts `python -I sf-patch-day.py` with the
 options you give it, so on Linux type `python3 -I sf-patch-day.py` instead. To check the install
@@ -155,7 +155,7 @@ author names changed, output shortened):
 
 ```
 > .\sf-patch-day.cmd dlls --game-version 1.16.250
-sf-patch-day 0.2.0 dlls
+sf-patch-day 0.2.1 dlls
 Game version: 1.16.250 (given with --game-version)
 SFSE: NOT FOUND for this game version (sfse_1_16_250.dll is missing). Every SFSE plugin waits for an SFSE update from its authors.
 Address Library: versionlib-1-16-250-0.bin NOT FOUND in the folders checked (plugins that use it wait for its update)
@@ -312,7 +312,8 @@ Where your plugin sits matters for loose scripts:
   `MyMod:QuestScript`) is one your plugin's scripts or your archive use and no master uses, or, for a script with
   no namespace or a `Fragments:` script, when your plugin names it or one of your mod's own scripts uses it (as a
   helper it calls with `callstatic` or a parent it extends; a type it only declares isn't enough). A `note:` line
-  lists the scripts taken in that way.
+  lists the scripts taken in that way. A helper whose functions are all native (the script of an SFSE plugin,
+  whose code is in its DLL) is left out: it's another mod's, and there's no code in it to read.
 - In the Data folder, a master installed loose is recognized by the scripts its own records name. A loose copy of
   a master script there could be any mod's, so init reads the master's archive copy and says so in a `note:` line.
 - Settled limits in the shared Data folder: a bare helper taken in through `callstatic` or a parent can bring in
@@ -333,7 +334,8 @@ From the code it adds:
   such as `Step(MyQuest, 100)` calling `akQuest.SetStage(aiStage)`, are followed too. A quest your plugin overrides
   keeps its `copied: true` record and gets the stages added.
 - A master's own fragment and alias scripts, kept in your plugin's copy of a master record, are the master's and
-  aren't read for stages.
+  aren't read for stages. So is a master's attached script that the master's copy of the record already has. A
+  master script your plugin adds to the record, or one your mod ships its own copy of, is read as yours.
 
 What it can't see: a quest or stage number worked out while the game runs (a variable, a calculation, a number
 above 65535, a quest found with `Game.GetForm` or `GetOwningQuest()`), and calls made through another object's own
@@ -341,7 +343,11 @@ functions. Such a quest is left out, and a quest with an unknown stage says so i
 
 A loose script in the Data folder that doesn't match the rules above is left out; to have init read all of your
 loose scripts, run it on the plugin in your own folder. Script properties of type Var (which the Creation Kit can't fill) are skipped. A
-mod with more than 5,000 scripts of its own is read up to that limit, with a `note:` line. Check the file and add
+mod with more than 5,000 scripts of its own is read up to that limit, with a `note:` line that says at least how many
+more weren't read (the scripts those reference aren't found, so there may be more). A script that wasn't read still
+counts as your mod's for the records it's attached to. When a record's fragment scripts can be read two ways that
+both fit (Mutagen and xEdit lay out an empty fragment script name differently), init uses the
+usual layout for that record type and says so in a `note:` line with the record type and FormID. Check the file and add
 anything else by hand. The same mod and the same game files always give the same file.
 
 ## fingerprint
