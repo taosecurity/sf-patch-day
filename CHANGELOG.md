@@ -8,25 +8,26 @@ sf-patch-day 0.2.1 makes `drift init` more exact about which quest stages your m
 
 ### Example
 
-A made-up mod whose dialogue record has a fragment section that fits both layouts:
+This is the tool's real output on a made-up test mod whose dialogue record has a fragment section that fits both layouts:
 
     > .\sf-patch-day.cmd drift init ..\MyMod\MyMod.esm -o mods.json --data ..\Data --pex-tools ..\sf-pex-tools
     wrote mods.json: 1 overridden record(s), 0 master script function(s) your scripts call and 0 master quest(s) they set stages on, in 1 master(s)
       read 1 of your mod's own script(s) with sf-pex-tools 0.1.0 (..\sf-pex-tools)
       TestMaster.esm: 1 record(s)
-    note: the fragment scripts of INFO 02000801 can be read two ways; the full entry (as xEdit reads it) layout was used, the usual one for INFO
+    note: the fragment scripts of 1 INFO record(s) can be read two ways; the full entry (as xEdit reads it) layout was used, the usual one for INFO: 02000801
     Next: check the file, add anything else your mod relies on, then run drift snapshot (with sf-pex-tools, for the function checks).
 
 ### Fixes
 
-- A master's attached script on a master record your plugin overrides no longer counts as yours when the master's copy of the record already has it. A script your plugin adds to the record, or your mod's own copy of it, still counts.
+- A master's attached script on a master record your plugin overrides no longer counts as yours when the master's copy of the record already has it with the same quest and stage properties. A script your plugin adds to the record, one whose quest or stage property your plugin changes, or your mod's own copy of it, still counts.
+- When a master that could hold that record can't be read, the script still counts as yours, as in 0.2.0, since init can't tell whose it is.
 - A script of your mod that wasn't read because of the safety limit (5,000 scripts) still counts as yours, so its quest stages on an overridden master record are kept.
-- The safety limit's `note:` line counts only your mod's own unread scripts and says "at least". Before, it could count other mods' loose scripts.
+- The safety limit's `note:` line counts only your mod's own unread scripts and says "at least". Before, it could count other mods' loose scripts. Past the limit, a loose script with no namespace that only your scripts' code reaches is neither read nor counted.
 - The fragment count of a dialogue, package or scene record comes only from the flag bits that have a fragment (the low 2 for dialogue and scenes, the low 3 for packages), as xEdit reads it. A higher bit set by another tool no longer stops the rest of the record from being read.
 
 ### Changes
 
-- When a record's fragment scripts can be read two ways (an empty fragment script name, which Mutagen and xEdit lay out differently), init still uses the usual layout for that record type and now says so in a `note:` line. No record in the game's own plugins reads two ways.
+- When a record's fragment scripts can be read two ways (an empty fragment script name, which Mutagen and xEdit lay out differently), init still uses the usual layout for that record type and now says so in one `note:` line per record type (up to 20 FormIDs; the log lists them all). No record in the game's own plugins reads two ways.
 - In the game's Data folder, a loose script with no namespace that your scripts call is no longer read as your mod's when all its functions are native (the script of an SFSE plugin, whose code is in its DLL). The mods file doesn't change; only the script count and the `note:` line do.
 - The `--verbose` log says how each of these was decided.
 
@@ -159,34 +160,21 @@ Download `sf-patch-day-0.1.2.zip` and its `.sha256` file below, unzip it anywher
 
 ## 0.1.1 (2026-11-20)
 
-This release has small fixes to the case-insensitive file name lookup added in 0.1.0 (used on Linux and Proton, where file names
-are case-sensitive but the game's aren't).
+This release has small fixes to the case-insensitive file name lookup added in 0.1.0 (used on Linux and Proton, where file names are case-sensitive but the game's aren't).
 
-- When several files in a folder differ only in case, a WARNING names them and says the game may load another copy
-  than the one checked. It shows in the normal output (once per file), also when a run fails (with or without
-  `--json`), and `drift check` reports it at its own level, WARN (exit 1; level "WARN" in `--json` findings).
+- When several files in a folder differ only in case, a WARNING names them and says the game may load another copy than the one checked. It shows in the normal output (once per file), also when a run fails (with or without `--json`), and `drift check` reports it at its own level, WARN (exit 1; level "WARN" in `--json` findings).
 - A plugin given as a bare file name (run from its own folder) has its masters looked for in the current folder.
-- A folder that can't be listed is logged and tried again on the next lookup, instead of being skipped for the
-  rest of the run.
+- A folder that can't be listed is logged and tried again on the next lookup, instead of being skipped for the rest of the run.
 - A folder given two ways (a trailing slash, another case on Windows) is listed once.
-- `drift snapshot`, `drift check` and `drift init` start with a fresh look at the folders even when called from
-  another Python program.
+- `drift snapshot`, `drift check` and `drift init` start with a fresh look at the folders even when called from another Python program.
 - A test now runs the lookup as on a case-sensitive file system on every platform.
 
 ## 0.1.0 (2026-11-19)
 
 This is the first release.
 
-- `dlls` reads each SFSE plugin DLL's version data (from installed folders, single DLLs or zips) and gives one
-  verdict per plugin for a game version: WORKS, NEEDS ADDRESS LIBRARY, MAY FAIL, NEEDS NEWER SFSE, LOCKED, NOT AN
-  SFSE PLUGIN or UNREADABLE. It uses the same rule SFSE uses at startup. It reports the base layer too: the game
-  version from Starfield.exe (or `--game-version`), SFSE for that version, and the Address Library file for it.
-- `drift init`, `drift snapshot`, `drift check`: a mods file lists the records, quest stages and script functions
-  a mod relies on in its masters; snapshot takes a baseline and check says whether an update changed them (exit 2
-  = rebuild). init writes a starting mods file from a mod's own overrides. Function checks use sf-pex-tools 0.1.0
-  when it's installed.
+- `dlls` reads each SFSE plugin DLL's version data (from installed folders, single DLLs or zips) and gives one verdict per plugin for a game version: WORKS, NEEDS ADDRESS LIBRARY, MAY FAIL, NEEDS NEWER SFSE, LOCKED, NOT AN SFSE PLUGIN or UNREADABLE. It uses the same rule SFSE uses at startup. It reports the base layer too: the game version from Starfield.exe (or `--game-version`), SFSE for that version, and the Address Library file for it.
+- `drift init`, `drift snapshot`, `drift check`: a mods file lists the records, quest stages and script functions a mod relies on in its masters; snapshot takes a baseline and check says whether an update changed them (exit 2 = rebuild). init writes a starting mods file from a mod's own overrides. Function checks use sf-pex-tools 0.1.0 when it's installed.
 - `fingerprint` prints a plugin's probe FormID and highest own FormID, for in-game update checks.
-- The tool has `--verbose` and `--log <file>`, `--json` (dlls, drift check), Steam and Game Pass found automatically, and MO2 and
-  Vortex folders as options. It is read-only on the game folder and makes no network use.
-- Names are matched the way the game matches them: Editor IDs, script paths, function names and plugin and
-  archive file names ignore case, on Linux (Proton) too.
+- The tool has `--verbose` and `--log <file>`, `--json` (dlls, drift check), Steam and Game Pass found automatically, and MO2 and Vortex folders as options. It is read-only on the game folder and makes no network use.
+- Names are matched the way the game matches them: Editor IDs, script paths, function names and plugin and archive file names ignore case, on Linux (Proton) too.

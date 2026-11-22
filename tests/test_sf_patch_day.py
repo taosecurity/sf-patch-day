@@ -842,6 +842,28 @@ class TestScriptParts(Temp):
             scripts.vmad_parts(mk.vmad([], tail=tail)[6:], "INFO", seen)
             self.assertEqual(seen, [])
 
+    def test_quest_empty_fragment_name_is_not_read_twice(self):
+        # Both layouts read a quest's empty fragment script name the same way (name only), so it doesn't call for
+        # the second read of the ambiguity check. An empty alias script name still does.
+        calls_made = []
+        old = scripts._other_fits
+
+        def counting(*a):
+            calls_made.append(a[2])
+            return old(*a)
+        scripts._other_fits = counting
+        try:
+            frag = mk.quest_tail(fragments=[(10, "QF_A", "Fragment_Stage_0010")])[:-2]  # without the alias count
+            bare_alias = struct.pack("<H", 1) + struct.pack("<HhI", 0, 1, 0) + struct.pack("<HHH", 6, 2, 1) + mk._wstr("")
+            for tail, expected in ((frag + struct.pack("<H", 0), 0), (frag + bare_alias, 1)):
+                calls_made.clear()
+                field = mk.vmad([], tail=tail)[6:]
+                seen = []
+                self.assertEqual(scripts.vmad_parts(field, "QUST", seen)[0], [])
+                self.assertEqual((len(calls_made), seen), (expected, []))
+        finally:
+            scripts._other_fits = old
+
     def test_console_archives_left_out(self):
         d = self.p("d")
         write(os.path.join(d, "MyMod - Main.ba2"), mk.ba2([]))
@@ -978,11 +1000,27 @@ class TestInitScripts(Temp):
         code, out = run("drift", "init", mod, "-o", self.p("m.json"), "--data", data, "--pex-tools", TOOLS.folder,
                         "--log", log_file)
         self.assertEqual(code, 0, out)
-        self.assertIn("note: the fragment scripts of INFO 02000801 can be read two ways; the full entry (as xEdit "
-                      "reads it) layout was used, the usual one for INFO", out)
+        self.assertIn("note: the fragment scripts of 1 INFO record(s) can be read two ways; the full entry (as xEdit "
+                      "reads it) layout was used, the usual one for INFO: 02000801\n", out)
         self.assertIn("read 1 of your mod's own script(s)", out)
         with open(log_file, encoding="utf-8") as f:
             self.assertIn("INFO 02000801: its fragment section reads two ways", f.read())
+
+    def test_ambiguous_fragment_layout_note_is_one_line_per_type(self):
+        # 22 such records: one note for the type, listing 20 FormIDs and "and 2 more" (the log has them all).
+        data, src = self.p("Data"), self.p("src")
+        tm_world(data)
+        mod = os.path.join(src, "ScriptMod.esm")
+        write(mod, mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm"], [
+            mk.group("QUST", [mk.record("QUST", 0x01000800, [mk.edid("TM_Quest")])]),
+            mk.group("INFO", [mk.record("INFO", 0x02000801 + i, [mk.vmad([], tail=ambiguous_info_tail())])
+                              for i in range(22)])]))
+        write(os.path.join(src, "Scripts", "TIF_A.pex"), mk.pex("TIF_A", "TopicInfo"))
+        mods, notes, summary = drift.init(mod, [data], TOOLS)
+        lines = [n for n in notes if "read two ways" in n]
+        listed = ", ".join(f"{0x02000801 + i:08X}" for i in range(20))
+        self.assertEqual(lines, [f"the fragment scripts of 22 INFO record(s) can be read two ways; the full entry (as "
+                                 f"xEdit reads it) layout was used, the usual one for INFO: {listed} and 2 more"])
 
     def test_init_reads_scripts(self):
         data, src = self.p("Data"), self.p("src")
@@ -1189,6 +1227,85 @@ class TestInitScriptOwnership(Temp):
                 if not own_copy:
                     self.assertIn("the master's copy of the record has it too" if master_has
                                   else "your mod added it to the record", logged)
+
+    def test_master_attached_script_with_a_changed_property(self):
+        # TM:Setter sets stage 20 on its Q property's quest. The master's TM_Quest has it with Q = TM_Quest. A mod
+        # that keeps Q keeps the master's doing; one that points Q at TM_Other sets TM_Other's stage itself.
+        setter = mk.pex("TM:Setter", "Quest", variables=[("::Q_var", "Quest")], properties=[("Q", "Quest", "::Q_var")],
+                        functions=[("Go", [], [("::t1", "Bool")], [
+                            ("callmethod", ["ident:SetStage", "ident:::Q_var", "ident:::t1", "int:20"])])])
+        stages = [mk.sub("INDX", struct.pack("<HH", 10, 0)), mk.sub("INDX", struct.pack("<HH", 20, 0))]
+        for name, q, expected in (("kept", 0x01000800, {"TM_Quest": None}),
+                                  ("changed", 0x01000801, {"TM_Quest": None, "TM_Other": [20]})):
+            with self.subTest(name):
+                data, src = self.p(name, "Data"), self.p(name, "src")
+                tm_world(data)
+                write(os.path.join(data, "TestMaster - Main.ba2"), mk.ba2([
+                    ("scripts/TM/Base.pex", tm_base()), ("scripts/TM/Setter.pex", setter)]))
+                write(os.path.join(data, "TestMaster.esm"), mk.plugin(0x1, ["Starfield.esm"], [mk.group("QUST", [
+                    mk.record("QUST", 0x01000800, [mk.edid("TM_Quest")] + stages
+                              + [mk.vmad([("TM:Setter", [("Q", 1, 0x01000800)])])]),
+                    mk.record("QUST", 0x01000801, [mk.edid("TM_Other")] + stages)])]))
+                mod = os.path.join(src, "ScriptMod.esm")
+                write(mod, mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm"], [mk.group("QUST", [
+                    mk.record("QUST", 0x01000800, [mk.edid("TM_Quest"), mk.vmad([("TM:Setter", [("Q", 1, q)])])])])]))
+                log_file = self.p(name, "init.log")
+                code, out = run("drift", "init", mod, "-o", self.p(name, "m.json"), "--data", data,
+                                "--pex-tools", TOOLS.folder, "--log", log_file)
+                self.assertEqual(code, 0, out)
+                with open(self.p(name, "m.json"), encoding="utf-8") as f:
+                    rec = json.load(f)["masters"]["TestMaster.esm"]["records"]
+                self.assertEqual({r["edid"]: r.get("stages") for r in rec}, expected, rec)
+                with open(log_file, encoding="utf-8") as f:
+                    logged = f.read()
+                self.assertIn("the master's copy of the record has it too" if name == "kept"
+                              else "your mod changed its property q; its stages are credited", logged)
+
+    def test_master_attached_script_when_a_later_master_cant_be_read(self):
+        # TestMaster's TM_Quest has TM:Starter (stage 20). Later.esm, loaded after it, overrides TM_Quest with a
+        # damaged record: its copy is the one the mod replaces, and it can't be read, so TestMaster's copy doesn't
+        # decide and stage 20 is credited to the mod (0.2.0's behavior when it can't tell).
+        starter = mk.pex("TM:Starter", "Quest", functions=[("Go", [], [("::t1", "Bool")], [
+            ("callmethod", ["ident:SetStage", "ident:self", "ident:::t1", "int:20"])])])
+        data, src = self.p("Data"), self.p("src")
+        tm_world(data)
+        write(os.path.join(data, "TestMaster - Main.ba2"), mk.ba2([
+            ("scripts/TM/Base.pex", tm_base()), ("scripts/TM/Starter.pex", starter)]))
+        quest = [mk.edid("TM_Quest"), mk.sub("INDX", struct.pack("<HH", 10, 0)), mk.sub("INDX", struct.pack("<HH", 20, 0))]
+        write(os.path.join(data, "TestMaster.esm"), mk.plugin(0x1, ["Starfield.esm"], [mk.group("QUST", [
+            mk.record("QUST", 0x01000800, quest + [mk.vmad([("TM:Starter", [])])])])]))
+        damaged = b"\x40\x00\x00\x00" + b"not zlib data"
+        write(os.path.join(data, "Later.esm"), mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm"], [mk.group("QUST", [
+            b"QUST" + struct.pack("<III", len(damaged), 0x40000, 0x01000800) + bytes(8) + damaged])]))
+        mod = os.path.join(src, "ScriptMod.esm")
+        write(mod, mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm", "Later.esm"], [mk.group("QUST", [
+            mk.record("QUST", 0x01000800, [mk.edid("TM_Quest"), mk.vmad([("TM:Starter", [])])])])]))
+        log_file = self.p("init.log")
+        code, out = run("drift", "init", mod, "-o", self.p("m.json"), "--data", data, "--pex-tools", TOOLS.folder,
+                        "--log", log_file)
+        self.assertEqual(code, 0, out)
+        with open(self.p("m.json"), encoding="utf-8") as f:
+            rec = json.load(f)["masters"]["TestMaster.esm"]["records"]
+        self.assertEqual([(r["edid"], r.get("stages")) for r in rec], [("TM_Quest", [20])], rec)
+        with open(log_file, encoding="utf-8") as f:
+            self.assertIn("the master's copy can't be read; its stages are credited", f.read())
+
+    def test_safety_limit_skips_native_helpers(self):
+        # In the shared Data folder, past the limit, a bare loose all-native helper the mod's one script calls isn't
+        # one of the mod's unread scripts: no safety-limit note (0.2.1's first cut counted it as "at least 1 more").
+        data = self.p("Data")
+        tm_world(data)
+        scr = os.path.join(data, "Scripts")
+        write(os.path.join(scr, "ScriptModMain.pex"), calls("ScriptModMain", "Quest", ("DllApi", "DoThing", [])))
+        write(os.path.join(scr, "DllApi.pex"), mk.pex("DllApi", "ScriptObject", functions=[("DoThing", [], [], [], 0x3)]))
+        mod = self.mod_plugin(os.path.join(data, "ScriptMod.esm"), vmad=mk.vmad([("ScriptModMain", [])]))
+        old, scripts.MAX_SCRIPTS = scripts.MAX_SCRIPTS, 1
+        try:
+            mods, notes, summary = drift.init(mod, [data], TOOLS)
+        finally:
+            scripts.MAX_SCRIPTS = old
+        self.assertFalse([n for n in notes if "safety limit" in n or "DllApi" in n], notes)
+        self.assertEqual(summary["scripts"], 1)
 
     def test_safety_limit_is_a_note(self):
         data, src = self.p("Data"), self.p("src")

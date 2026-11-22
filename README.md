@@ -335,8 +335,10 @@ From the code it adds:
   such as `Step(MyQuest, 100)` calling `akQuest.SetStage(aiStage)`, are followed too. A quest your plugin overrides
   keeps its `copied: true` record and gets the stages added.
 - A master's own fragment and alias scripts, kept in your plugin's copy of a master record, are the master's and
-  aren't read for stages. So is a master's attached script that the master's copy of the record already has. A
-  master script your plugin adds to the record, or one your mod ships its own copy of, is read as yours.
+  aren't read for stages. So is a master's attached script that the master's copy of the record already has, with
+  the same values for the quest and stage properties it reads. A master script your plugin adds to the record, one
+  whose quest or stage property your plugin changes, or one your mod ships its own copy of, is read as yours (and so
+  is one on a record whose master copy can't be read).
 
 What it can't see: a quest or stage number worked out while the game runs (a variable, a calculation, a number
 above 65535, a quest found with `Game.GetForm` or `GetOwningQuest()`), and calls made through another object's own
@@ -351,8 +353,8 @@ many more weren't read (the scripts those reference aren't found, so there may b
 still counts as your mod's for the records it's attached to.
 
 When a record's fragment scripts can be read two ways that both fit (Mutagen and xEdit lay out an empty fragment
-script name differently), init uses the usual layout for that record type and says so in a `note:` line with the
-record type and FormID.
+script name differently), init uses the usual layout for that record type and says so in a `note:` line per record
+type, with up to 20 FormIDs (the `--verbose` log lists every one).
 
 Check the file and add anything else by hand. The same mod and the same game files always give the same file.
 

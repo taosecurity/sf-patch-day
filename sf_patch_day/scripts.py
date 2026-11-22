@@ -129,15 +129,16 @@ def _fragment_names(r, count):
         r.wstr()  # the fragment's function name
 
 
-def _tail_entry(r, objfmt, version, bare_empty):
+def _tail_entry(r, objfmt, version, bare_empty, both_bare=False):
     """One script entry in the fragment section (the fragment script, or an alias script). With a name it is a full
     entry (name, status, properties). With an empty name the two references disagree: Mutagen (ReadEntry and
     WriteEntry) writes the name only, for every entry; xEdit's Starfield definitions do that only for the quest's
     fragment script (wbScriptFragmentsEmptyScriptDecider) and read a full entry everywhere else. bare_empty picks
     the name-only layout; vmad_parts tries the record type's preferred layout first (BARE_FIRST) and falls back to
-    the other."""
+    the other. both_bare: an entry both layouts read name-only (the quest's fragment script), so it can't make the
+    layouts differ."""
     name = r.wstr()
-    if not name:
+    if not name and not both_bare:
         r.empty = True  # the two layouts can differ only here (vmad_parts' ambiguity check)
     if not name and bare_empty:
         return name, {}
@@ -154,7 +155,7 @@ def _tail(r, sig, objfmt, version, bare_empty=True):
     r.take(1)  # extra bind data version
     if sig == "QUST":
         count = r.u16()
-        out.append(_tail_entry(r, objfmt, version, True) + ("fragment",))  # both references: an empty name is bare
+        out.append(_tail_entry(r, objfmt, version, True, both_bare=True) + ("fragment",))  # both: name-only
         for _ in range(count):
             r.take(8)  # stage, unknown, stage index
             out += [(n, {}, "fragment") for n in _fragment_names(r, 1)]
@@ -519,10 +520,23 @@ def _local_id(fid):
     return fid & 0xFFF if top == 0xFE else fid & 0xFFFF if top == 0xFD else fid & 0xFFFFFF
 
 
+def _origin_props(props, origin_of):
+    """props with each ("obj", FormID) value as ("obj", (lowercase plugin, local id)), so the values of two plugins
+    with different master lists compare; origin_of(fid) names the plugin a FormID belongs to (None: unknown)."""
+    out = {}
+    for name, v in props.items():
+        if v and v[0] == "obj":
+            plugin = origin_of(v[1])
+            v = ("obj", (plugin.lower() if plugin else None, _local_id(v[1])))
+        out[name] = v
+    return out
+
+
 def _master_attached(masters, dirs, folder, wanted):
-    """{(origin plugin, local id): set of lowercase attached script names, or None when unread} for the records in
-    wanted ({(origin plugin, local id): top-level group label}), as the last of the masters that holds each record
-    has them: the copy the mod's override replaces. A record no master holds isn't in the result."""
+    """{(origin plugin, local id): {lowercase attached script name: its properties (_origin_props)}, or None when
+    unread} for the records in wanted ({(origin plugin, local id): top-level group label}), as the last of the
+    masters that holds each record has them: the copy the mod's override replaces. A record no master holds isn't in
+    the result. When a master can't be read, every wanted record is None: that master might hold the last copy."""
     out = {}
     tops = {t for t in wanted.values()}
     if tops & {"CELL", "WRLD"}:
@@ -534,23 +548,25 @@ def _master_attached(masters, dirs, folder, wanted):
             continue
         try:
             with Plugin(path, dirs) as mp:
+                def origin_of(f, mp=mp, m=m):
+                    return m if mp.is_own(f) else mp.master_of(f)
                 for top in sorted(tops):
                     for sig, fid, flags, start, size, _t in mp.walk(only_top=top):
-                        key = (m if mp.is_own(fid) else mp.master_of(fid), _local_id(fid))
+                        key = (origin_of(fid), _local_id(fid))
                         if key[0] is None or (key[0].lower(), key[1]) not in wanted:
                             continue
                         names = None
                         vm = [d for s, d in subrecords(mp.body(flags, start, size)) if s == "VMAD"]
                         try:
-                            names = {n.lower() for n, _ in vmad_parts(vm[0], sig)[0]} if vm else set()
+                            names = ({n.lower(): _origin_props(pr, origin_of) for n, pr in vmad_parts(vm[0], sig)[0]}
+                                     if vm else {})
                         except ScriptError as e:
                             log.info("scripts", f"{path}: {sig} {fid:08X}: {e}")
                         out[(key[0].lower(), key[1])] = names
         except (OSError, PluginError) as e:
-            log.info("scripts", f"{path}: {e}")
+            log.info("scripts", f"{path}: {e}; the attached scripts of the records it might hold can't be compared")
             for k in wanted:
-                if k not in out:
-                    out[k] = None  # this master might hold it: can't tell
+                out[k] = None  # this master might hold the last copy: can't tell, whatever an earlier one had
     return out
 
 
@@ -650,17 +666,29 @@ def analyze(mod_path, dirs, tools):
         for k in sorted(loose_keys):
             if loose_is_mods(k) and (not shared or k in named or k in own):
                 take_loose(k)
+        def code_only(k):  # a bare loose script that would be taken in only through the mod's code (via_code)
+            return k in via_code or (shared and k not in own and k in loose_keys and _ns(k) in GENERIC_NS
+                                     and k not in named)
+
+        def counted(k):  # the mod's own scripts, for the safety limit
+            return not code_only(k) and (k in own or (k in loose_keys and loose_is_mods(k)))
+
         todo = sorted(own | named)
         done, read = set(), set()
         while todo:
             key = todo.pop(0)
             if key in done:
                 continue
-            if len(read) >= MAX_SCRIPTS and (key in own or (key in loose_keys and loose_is_mods(key))):
+            if len(read) >= MAX_SCRIPTS and code_only(key) and key not in own:
+                # Past the limit, a bare loose script reached only through the mod's code isn't taken in: it may
+                # be another mod's (an SFSE plugin's all-native script, left out when read) and no record names it.
+                done.add(key)
+                log.info("scripts", f"{loose_keys[key]}: past the safety limit; not read or counted as {mod}'s")
+                continue
+            if len(read) >= MAX_SCRIPTS and counted(key):
                 # Only the mod's own scripts count; the scripts the unread ones reference aren't found, hence
                 # "at least". The unread ones still count as the mod's for ownership (not for analysis).
-                unread = sorted({k for k in todo + [key] if k not in done
-                                 and (k in own or (k in loose_keys and loose_is_mods(k)))})
+                unread = sorted({k for k in todo + [key] if k not in done and counted(k)})
                 for k in unread:
                     if k not in own:
                         lib.add_loose(k, loose_keys[k], (mod, "loose", scripts_root))
@@ -766,8 +794,10 @@ def analyze(mod_path, dirs, tools):
                          f"as your mod's own because your scripts extend them or call them with callstatic: "
                          f"{', '.join(shown[:20])}{more}")
         def masters_have(asked):
-            """The (sig, fid, lowercase script name) in asked whose script the master's copy of the record already
-            has attached: the master put it there, so its stages aren't the mod's doing."""
+            """The (sig, fid, lowercase script name) in asked ({(sig, fid, name): {property name: the mod's value}},
+            the properties its stage calls read) whose script the master's copy of the record already has attached,
+            with the same values for those properties: the master put it there, so its stages aren't the mod's
+            doing. A changed property (another quest or stage) makes them the mod's."""
             wanted = {}
             for sig, fid, _n in asked:
                 if master_of(fid):
@@ -777,13 +807,17 @@ def analyze(mod_path, dirs, tools):
             for sig, fid, n in sorted(asked):
                 key = (master_of(fid).lower(), _local_id(fid)) if master_of(fid) else None
                 names = copies.get(key)
-                if names is not None and n in names:
+                mine = _origin_props(asked[(sig, fid, n)], lambda f: master_of(f) or mod)
+                changed = sorted(pn for pn in mine if names and n in names and names[n].get(pn) != mine[pn])
+                if names is not None and n in names and not changed:
                     out.add((sig, fid, n))
                     log.info("scripts", f"{shown_name[n]} on {sig} {fid:08X}: the master's copy of the record has it "
                                         f"too; its stages aren't credited to {mod}")
                 else:
                     why = ("no master's copy of the record was found" if key not in copies else
-                           "the master's copy can't be read" if names is None else "your mod added it to the record")
+                           "the master's copy can't be read" if names is None else
+                           "your mod added it to the record" if n not in names else
+                           f"your mod changed its propert{'y' if len(changed) == 1 else 'ies'} {', '.join(changed)}")
                     log.info("scripts", f"{shown_name[n]} on {sig} {fid:08X}: {why}; its stages are credited to {mod}")
             return out
 
@@ -804,9 +838,13 @@ def analyze(mod_path, dirs, tools):
         if stats["tail_failed"]:
             notes.append(f"the fragment or alias scripts of {stats['tail_failed']} record(s) couldn't be read (the "
                          f"log says which); their attached scripts were read")
+        two_ways = {}  # (sig, layout) -> FormIDs, one note each with at most 20 listed (the log has them all)
         for sig, fid, layout in stats.get("ambiguous", []):
-            notes.append(f"the fragment scripts of {sig} {fid:08X} can be read two ways; the {layout} layout was "
-                         f"used, the usual one for {sig}")
+            two_ways.setdefault((sig, layout), []).append(fid)
+        for (sig, layout), fids in sorted(two_ways.items()):
+            more = f" and {len(fids) - 20} more" if len(fids) > 20 else ""
+            notes.append(f"the fragment scripts of {len(fids)} {sig} record(s) can be read two ways; the {layout} "
+                         f"layout was used, the usual one for {sig}: {', '.join(f'{f:08X}' for f in fids[:20])}{more}")
         # The mod is never its own master (a plugin that lists itself as a master is damaged).
         out = {m: v for m, v in out.items() if m.lower() != mod.lower()}
         quests = {k: v for k, v in quests.items() if k[0].lower() != mod.lower()}
@@ -862,7 +900,8 @@ def _stage_calls(lib, attached, shown_name, nk, master_of, own, masters_have=Non
     passed down through the script's own functions (Step(RI01, 100) calling akQuest.SetStage(aiStage)) is followed
     up to MAX_DEPTH calls deep. A master's script (not the mod's own copy) on a master record the mod overrides is
     the master's doing, not the mod's: its fragment and alias scripts are skipped, and so are its attached scripts
-    when masters_have({(sig, fid, script)}) says the master's copy of the record has that script too."""
+    when masters_have({(sig, fid, script): {property: value}}) says the master's copy of the record has that script
+    too, with the same values for the properties its stage calls read."""
     quests, found = {}, {}
     for sname in sorted(attached):
         chain, k, depth = [], script_key(shown_name[sname], nk), 0
@@ -915,9 +954,15 @@ def _stage_calls(lib, attached, shown_name, nk, master_of, own, masters_have=Non
                         pairs.add((s.name, q, st))
         found[sname] = pairs
     # A master's attached script on an overridden master record: ask whether the master's copy has it too.
-    asked = {(sig, fid, sname) for sname in attached if found[sname]
-             and script_key(shown_name[sname], nk) not in own
-             for sig, fid, is_master, _p, kind in attached[sname] if is_master and not kind}
+    # With the properties its stage calls read: when the mod changed one, the stages are the mod's.
+    asked = {}
+    for sname in attached:
+        if not found[sname] or script_key(shown_name[sname], nk) in own:
+            continue
+        used = {x[1] for _by, q, st in found[sname] for x in (q, st) if x and x[0] == "prop"}
+        for sig, fid, is_master, props, kind in attached[sname]:
+            if is_master and not kind:
+                asked[(sig, fid, sname)] = {pn: props.get(pn) for pn in sorted(used)}
     masters_own = masters_have(asked) if asked and masters_have else set()
     for sname in sorted(attached):
         pairs = found[sname]
