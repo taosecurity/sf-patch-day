@@ -536,7 +536,8 @@ def _master_attached(masters, dirs, folder, wanted):
     """{(origin plugin, local id): {lowercase attached script name: its properties (_origin_props)}, or None when
     unread} for the records in wanted ({(origin plugin, local id): top-level group label}), as the last of the
     masters that holds each record has them: the copy the mod's override replaces. A record no master holds isn't in
-    the result. When a master can't be read, every wanted record is None: that master might hold the last copy."""
+    the result. When a master isn't found or can't be read, every wanted record it might hold (all of them when its
+    master list is unknown) is None: that master might hold the last copy."""
     out = {}
     tops = {t for t in wanted.values()}
     if tops & {"CELL", "WRLD"}:
@@ -544,10 +545,15 @@ def _master_attached(masters, dirs, folder, wanted):
     for m in masters:
         path = find_plugin(m, list(dirs) + [folder])
         if not path:
-            log.info("scripts", f"{m} not found: the attached scripts of its records can't be compared")
+            log.info("scripts", f"{m} not found: the attached scripts of the records it might hold can't be compared")
+            for k in wanted:
+                out[k] = None  # it might hold the last copy: can't tell, whatever an earlier master had
             continue
+        can_hold = None  # the plugins whose records this master can override (unknown until its header is read)
         try:
             with Plugin(path, dirs) as mp:
+                can_hold = {x.lower() for x in mp.masters} | {m.lower()}
+
                 def origin_of(f, mp=mp, m=m):
                     return m if mp.is_own(f) else mp.master_of(f)
                 for top in sorted(tops):
@@ -566,7 +572,8 @@ def _master_attached(masters, dirs, folder, wanted):
         except (OSError, PluginError) as e:
             log.info("scripts", f"{path}: {e}; the attached scripts of the records it might hold can't be compared")
             for k in wanted:
-                out[k] = None  # this master might hold the last copy: can't tell, whatever an earlier one had
+                if can_hold is None or k[0] in can_hold:
+                    out[k] = None  # this master might hold the last copy: can't tell, whatever an earlier one had
     return out
 
 
@@ -670,8 +677,16 @@ def analyze(mod_path, dirs, tools):
             return k in via_code or (shared and k not in own and k in loose_keys and _ns(k) in GENERIC_NS
                                      and k not in named)
 
+        def native_only(k):  # a loose script whose functions are all native (its listing is read to tell)
+            if k not in lib.where:
+                lib.add_loose(k, loose_keys[k], (mod, "loose", scripts_root))
+            s = lib.get(k)
+            return s is not None and s.all_native
+
         def counted(k):  # the mod's own scripts, for the safety limit
-            return not code_only(k) and (k in own or (k in loose_keys and loose_is_mods(k)))
+            if code_only(k):  # as if read: an all-native one would be left out (see below)
+                return k not in via_code and loose_is_mods(k) and not native_only(k)
+            return k in own or (k in loose_keys and loose_is_mods(k))
 
         todo = sorted(own | named)
         done, read = set(), set()
@@ -679,18 +694,21 @@ def analyze(mod_path, dirs, tools):
             key = todo.pop(0)
             if key in done:
                 continue
-            if len(read) >= MAX_SCRIPTS and code_only(key) and key not in own:
-                # Past the limit, a bare loose script reached only through the mod's code isn't taken in: it may
-                # be another mod's (an SFSE plugin's all-native script, left out when read) and no record names it.
+            if len(read) >= MAX_SCRIPTS and code_only(key) and key not in via_code and not counted(key):
+                # Past the limit, an all-native bare loose script reached only through the mod's code isn't taken
+                # in, as when it's read below.
                 done.add(key)
-                log.info("scripts", f"{loose_keys[key]}: past the safety limit; not read or counted as {mod}'s")
+                if loose_is_mods(key):
+                    log.info("scripts", f"{loose_keys[key]}: every function is native (a DLL's script): left out "
+                                        f"past the safety limit, not counted as {mod}'s")
                 continue
             if len(read) >= MAX_SCRIPTS and counted(key):
                 # Only the mod's own scripts count; the scripts the unread ones reference aren't found, hence
-                # "at least". The unread ones still count as the mod's for ownership (not for analysis).
+                # "at least". The unread ones still count as the mod's for ownership (not for analysis); a bare
+                # one reached only through code isn't named by any record, so it's counted only.
                 unread = sorted({k for k in todo + [key] if k not in done and counted(k)})
                 for k in unread:
-                    if k not in own:
+                    if k not in own and not code_only(k):
                         lib.add_loose(k, loose_keys[k], (mod, "loose", scripts_root))
                         own.add(k)
                 log.info("scripts", f"safety limit: {MAX_SCRIPTS} script(s) read; {len(unread)} more of {mod}'s own "

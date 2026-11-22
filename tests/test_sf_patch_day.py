@@ -1264,48 +1264,70 @@ class TestInitScriptOwnership(Temp):
     def test_master_attached_script_when_a_later_master_cant_be_read(self):
         # TestMaster's TM_Quest has TM:Starter (stage 20). Later.esm, loaded after it, overrides TM_Quest with a
         # damaged record: its copy is the one the mod replaces, and it can't be read, so TestMaster's copy doesn't
-        # decide and stage 20 is credited to the mod (0.2.0's behavior when it can't tell).
+        # decide and stage 20 is credited to the mod (0.2.0's behavior when it can't tell). The same when Later.esm
+        # isn't installed. A damaged Later.esm that doesn't list TestMaster.esm as a master can't hold TM_Quest:
+        # TestMaster's copy still decides.
         starter = mk.pex("TM:Starter", "Quest", functions=[("Go", [], [("::t1", "Bool")], [
             ("callmethod", ["ident:SetStage", "ident:self", "ident:::t1", "int:20"])])])
-        data, src = self.p("Data"), self.p("src")
-        tm_world(data)
-        write(os.path.join(data, "TestMaster - Main.ba2"), mk.ba2([
-            ("scripts/TM/Base.pex", tm_base()), ("scripts/TM/Starter.pex", starter)]))
-        quest = [mk.edid("TM_Quest"), mk.sub("INDX", struct.pack("<HH", 10, 0)), mk.sub("INDX", struct.pack("<HH", 20, 0))]
-        write(os.path.join(data, "TestMaster.esm"), mk.plugin(0x1, ["Starfield.esm"], [mk.group("QUST", [
-            mk.record("QUST", 0x01000800, quest + [mk.vmad([("TM:Starter", [])])])])]))
         damaged = b"\x40\x00\x00\x00" + b"not zlib data"
-        write(os.path.join(data, "Later.esm"), mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm"], [mk.group("QUST", [
-            b"QUST" + struct.pack("<III", len(damaged), 0x40000, 0x01000800) + bytes(8) + damaged])]))
-        mod = os.path.join(src, "ScriptMod.esm")
-        write(mod, mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm", "Later.esm"], [mk.group("QUST", [
-            mk.record("QUST", 0x01000800, [mk.edid("TM_Quest"), mk.vmad([("TM:Starter", [])])])])]))
-        log_file = self.p("init.log")
-        code, out = run("drift", "init", mod, "-o", self.p("m.json"), "--data", data, "--pex-tools", TOOLS.folder,
-                        "--log", log_file)
-        self.assertEqual(code, 0, out)
-        with open(self.p("m.json"), encoding="utf-8") as f:
-            rec = json.load(f)["masters"]["TestMaster.esm"]["records"]
-        self.assertEqual([(r["edid"], r.get("stages")) for r in rec], [("TM_Quest", [20])], rec)
-        with open(log_file, encoding="utf-8") as f:
-            self.assertIn("the master's copy can't be read; its stages are credited", f.read())
+        cases = (("damaged", ["Starfield.esm", "TestMaster.esm"], [20], "the master's copy can't be read"),
+                 ("not installed", None, [20], "the master's copy can't be read"),
+                 ("can't hold it", ["Starfield.esm"], None, "the master's copy of the record has it too"))
+        for name, later_masters, stages, logged in cases:
+            with self.subTest(name):
+                data, src = self.p(name, "Data"), self.p(name, "src")
+                tm_world(data)
+                write(os.path.join(data, "TestMaster - Main.ba2"), mk.ba2([
+                    ("scripts/TM/Base.pex", tm_base()), ("scripts/TM/Starter.pex", starter)]))
+                quest = [mk.edid("TM_Quest"), mk.sub("INDX", struct.pack("<HH", 10, 0)),
+                         mk.sub("INDX", struct.pack("<HH", 20, 0))]
+                write(os.path.join(data, "TestMaster.esm"), mk.plugin(0x1, ["Starfield.esm"], [mk.group("QUST", [
+                    mk.record("QUST", 0x01000800, quest + [mk.vmad([("TM:Starter", [])])])])]))
+                if later_masters:
+                    # Holding TM_Quest: a copy that won't unpack. Not holding it: a group that runs past the end, so
+                    # the walk itself fails.
+                    bad = (mk.group("QUST", [b"QUST" + struct.pack("<III", len(damaged), 0x40000, 0x01000800)
+                                             + bytes(8) + damaged])
+                           if len(later_masters) == 2 else
+                           b"GRUP" + struct.pack("<I", 5000) + b"QUST" + bytes(12))
+                    write(os.path.join(data, "Later.esm"), mk.plugin(0x1, later_masters, [bad]))
+                mod = os.path.join(src, "ScriptMod.esm")
+                write(mod, mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm", "Later.esm"], [mk.group("QUST", [
+                    mk.record("QUST", 0x01000800, [mk.edid("TM_Quest"), mk.vmad([("TM:Starter", [])])])])]))
+                log_file = self.p(name, "init.log")
+                code, out = run("drift", "init", mod, "-o", self.p(name, "m.json"), "--data", data,
+                                "--pex-tools", TOOLS.folder, "--log", log_file)
+                self.assertEqual(code, 0, out)
+                with open(self.p(name, "m.json"), encoding="utf-8") as f:
+                    rec = json.load(f)["masters"]["TestMaster.esm"]["records"]
+                self.assertEqual([(r["edid"], r.get("stages")) for r in rec], [("TM_Quest", stages)], rec)
+                with open(log_file, encoding="utf-8") as f:
+                    self.assertIn(logged, f.read())
 
     def test_safety_limit_skips_native_helpers(self):
         # In the shared Data folder, past the limit, a bare loose all-native helper the mod's one script calls isn't
-        # one of the mod's unread scripts: no safety-limit note (0.2.1's first cut counted it as "at least 1 more").
-        data = self.p("Data")
-        tm_world(data)
-        scr = os.path.join(data, "Scripts")
-        write(os.path.join(scr, "ScriptModMain.pex"), calls("ScriptModMain", "Quest", ("DllApi", "DoThing", [])))
-        write(os.path.join(scr, "DllApi.pex"), mk.pex("DllApi", "ScriptObject", functions=[("DoThing", [], [], [], 0x3)]))
-        mod = self.mod_plugin(os.path.join(data, "ScriptMod.esm"), vmad=mk.vmad([("ScriptModMain", [])]))
-        old, scripts.MAX_SCRIPTS = scripts.MAX_SCRIPTS, 1
-        try:
-            mods, notes, summary = drift.init(mod, [data], TOOLS)
-        finally:
-            scripts.MAX_SCRIPTS = old
-        self.assertFalse([n for n in notes if "safety limit" in n or "DllApi" in n], notes)
-        self.assertEqual(summary["scripts"], 1)
+        # one of the mod's unread scripts: no safety-limit note (0.2.0 counted it as "at least 1 more"). A helper
+        # with code is one: the note says so.
+        for name, flags, note in (("native", 0x3, False), ("with code", 0, True)):
+            with self.subTest(name):
+                data = self.p(name, "Data")
+                tm_world(data)
+                scr = os.path.join(data, "Scripts")
+                write(os.path.join(scr, "ScriptModMain.pex"), calls("ScriptModMain", "Quest",
+                                                                    ("Helper", "DoThing", [])))
+                write(os.path.join(scr, "Helper.pex"), mk.pex("Helper", "ScriptObject",
+                                                              functions=[("DoThing", [], [], [], flags)]))
+                mod = self.mod_plugin(os.path.join(data, "ScriptMod.esm"), vmad=mk.vmad([("ScriptModMain", [])]))
+                old, scripts.MAX_SCRIPTS = scripts.MAX_SCRIPTS, 1
+                try:
+                    mods, notes, summary = drift.init(mod, [data], TOOLS)
+                finally:
+                    scripts.MAX_SCRIPTS = old
+                limit = [n for n in notes if "safety limit" in n]
+                self.assertEqual(limit, ["stopped after 1 of your mod's own scripts; at least 1 more weren't read "
+                                         "(a safety limit)"] if note else [], notes)
+                self.assertFalse([n for n in notes if "Helper" in n], notes)
+                self.assertEqual(summary["scripts"], 1)
 
     def test_safety_limit_is_a_note(self):
         data, src = self.p("Data"), self.p("src")

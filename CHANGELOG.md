@@ -20,9 +20,9 @@ This is the tool's real output on a made-up test mod whose dialogue record has a
 ### Fixes
 
 - A master's attached script on a master record your plugin overrides no longer counts as yours when the master's copy of the record already has it with the same quest and stage properties. A script your plugin adds to the record, one whose quest or stage property your plugin changes, or your mod's own copy of it, still counts.
-- When a master that could hold that record can't be read, the script still counts as yours, as in 0.2.0, since init can't tell whose it is.
+- When a master that could hold that record isn't installed or can't be read, the script still counts as yours, as in 0.2.0, since init can't tell whose it is.
 - A script of your mod that wasn't read because of the safety limit (5,000 scripts) still counts as yours, so its quest stages on an overridden master record are kept.
-- The safety limit's `note:` line counts only your mod's own unread scripts and says "at least". Before, it could count other mods' loose scripts. Past the limit, a loose script with no namespace that only your scripts' code reaches is neither read nor counted.
+- The safety limit's `note:` line counts only your mod's own unread scripts and says "at least". Before, it could count other mods' loose scripts. Past the limit, a loose script with no namespace that only your scripts' code reaches is counted only when it has code of its own (not all native).
 - The fragment count of a dialogue, package or scene record comes only from the flag bits that have a fragment (the low 2 for dialogue and scenes, the low 3 for packages), as xEdit reads it. A higher bit set by another tool no longer stops the rest of the record from being read.
 
 ### Changes
