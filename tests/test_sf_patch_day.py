@@ -1271,7 +1271,7 @@ class TestInitScriptOwnership(Temp):
             ("callmethod", ["ident:SetStage", "ident:self", "ident:::t1", "int:20"])])])
         damaged = b"\x40\x00\x00\x00" + b"not zlib data"
         cases = (("damaged", ["Starfield.esm", "TestMaster.esm"], [20], "the master's copy can't be read"),
-                 ("not installed", None, [20], "the master's copy can't be read"),
+                 ("not installed", None, [20], "Later.esm isn't installed"),
                  ("can't hold it", ["Starfield.esm"], None, "the master's copy of the record has it too"))
         for name, later_masters, stages, logged in cases:
             with self.subTest(name):
@@ -1344,6 +1344,27 @@ class TestInitScriptOwnership(Temp):
         self.assertIn("stopped after 1 of your mod's own scripts; at least 2 more weren't read (a safety limit)",
                       notes)
         self.assertEqual(summary["scripts"], 1)
+
+    def test_safety_limit_native_helper_is_logged_as_left_out(self):
+        # Past the limit, a bare loose all-native helper the mod's code reaches is left out, and the log says so.
+        # (A code-only script that isn't the mod's never reaches that check, so it needs no log line.)
+        data = self.p("Data")
+        tm_world(data)
+        scr = os.path.join(data, "Scripts")
+        write(os.path.join(scr, "ScriptModMain.pex"), calls("ScriptModMain", "Quest", ("Helper", "DoThing", [])))
+        write(os.path.join(scr, "Helper.pex"), mk.pex("Helper", "ScriptObject",
+                                                      functions=[("DoThing", [], [], [], 0x3)]))
+        mod = self.mod_plugin(os.path.join(data, "ScriptMod.esm"), vmad=mk.vmad([("ScriptModMain", [])]))
+        log_file = self.p("limit.log")
+        old, scripts.MAX_SCRIPTS = scripts.MAX_SCRIPTS, 1
+        try:
+            code, out = run("drift", "init", mod, "-o", self.p("m.json"), "--data", data,
+                            "--pex-tools", TOOLS.folder, "--log", log_file)
+        finally:
+            scripts.MAX_SCRIPTS = old
+        self.assertEqual(code, 0, out)
+        with open(log_file, encoding="utf-8") as f:
+            self.assertIn("every function is native (a DLL's script)", f.read())
 
     def test_safety_limit_counts_only_the_mods_scripts(self):
         # The plugin is in the shared Data folder. ZZ:Quest is a loose-installed master's script that the mod's quest

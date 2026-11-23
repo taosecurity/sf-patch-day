@@ -532,13 +532,15 @@ def _origin_props(props, origin_of):
     return out
 
 
-def _master_attached(masters, dirs, folder, wanted):
+def _master_attached(masters, dirs, folder, wanted, missing=None):
     """{(origin plugin, local id): {lowercase attached script name: its properties (_origin_props)}, or None when
     unread} for the records in wanted ({(origin plugin, local id): top-level group label}), as the last of the
     masters that holds each record has them: the copy the mod's override replaces. A record no master holds isn't in
     the result. When a master isn't found or can't be read, every wanted record it might hold (all of them when its
-    master list is unknown) is None: that master might hold the last copy."""
+    master list is unknown) is None: that master might hold the last copy. When missing (a dict) is given, it gets
+    {key: master's name} for each None that is because that master isn't installed."""
     out = {}
+    missing = {} if missing is None else missing
     tops = {t for t in wanted.values()}
     if tops & {"CELL", "WRLD"}:
         tops |= {"CELL", "WRLD"}  # a reference can sit in an interior cell or a worldspace
@@ -548,6 +550,7 @@ def _master_attached(masters, dirs, folder, wanted):
             log.info("scripts", f"{m} not found: the attached scripts of the records it might hold can't be compared")
             for k in wanted:
                 out[k] = None  # it might hold the last copy: can't tell, whatever an earlier master had
+                missing[k] = m
             continue
         can_hold = None  # the plugins whose records this master can override (unknown until its header is read)
         try:
@@ -569,11 +572,13 @@ def _master_attached(masters, dirs, folder, wanted):
                         except ScriptError as e:
                             log.info("scripts", f"{path}: {sig} {fid:08X}: {e}")
                         out[(key[0].lower(), key[1])] = names
+                        missing.pop((key[0].lower(), key[1]), None)
         except (OSError, PluginError) as e:
             log.info("scripts", f"{path}: {e}; the attached scripts of the records it might hold can't be compared")
             for k in wanted:
                 if can_hold is None or k[0] in can_hold:
                     out[k] = None  # this master might hold the last copy: can't tell, whatever an earlier one had
+                    missing.pop(k, None)
     return out
 
 
@@ -820,7 +825,9 @@ def analyze(mod_path, dirs, tools):
             for sig, fid, _n in asked:
                 if master_of(fid):
                     wanted[(master_of(fid).lower(), _local_id(fid))] = top_of.get(fid, sig)
-            copies = _master_attached([m for m in masters if m.lower() != mod.lower()], dirs, folder, wanted)
+            not_installed = {}
+            copies = _master_attached([m for m in masters if m.lower() != mod.lower()], dirs, folder, wanted,
+                                      not_installed)
             out = set()
             for sig, fid, n in sorted(asked):
                 key = (master_of(fid).lower(), _local_id(fid)) if master_of(fid) else None
@@ -833,6 +840,7 @@ def analyze(mod_path, dirs, tools):
                                         f"too; its stages aren't credited to {mod}")
                 else:
                     why = ("no master's copy of the record was found" if key not in copies else
+                           f"{not_installed[key]} isn't installed" if key in not_installed else
                            "the master's copy can't be read" if names is None else
                            "your mod added it to the record" if n not in names else
                            f"your mod changed its propert{'y' if len(changed) == 1 else 'ies'} {', '.join(changed)}")

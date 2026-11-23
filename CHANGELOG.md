@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.2 (unreleased)
+
+### What's new
+
+sf-patch-day 0.2.2 makes the `drift init` log clearer when a master plugin isn't installed. The log now says which master is missing, where it used to say that the master's copy "can't be read". The result is the same as in 0.2.1: the script's quest stages are credited to your mod. The mods file and the command line haven't changed.
+
+### Example
+
+This is the tool's real output on a made-up test mod whose master list names a plugin, Later.esm, that isn't in the Data folder. The last line comes from the log file written with `--log`:
+
+    > .\sf-patch-day.cmd drift init ..\MyMod\MyMod.esm -o mods.json --data ..\Data --pex-tools ..\sf-pex-tools --log init.log
+    wrote mods.json: 1 overridden record(s), 0 master script function(s) your scripts call and 1 master quest(s) they set stages on, in 1 master(s)
+      read 0 of your mod's own script(s) with sf-pex-tools 0.1.0 (..\sf-pex-tools)
+      TestMaster.esm: 1 record(s), 1 with quest stages
+    note: masters not found, so FE/FD record numbers may be misread: Later.esm (give --data or --plugin-dir)
+    Next: check the file, add anything else your mod relies on, then run drift snapshot (with sf-pex-tools, for the function checks).
+
+    init.log: TM:Starter on QUST 01000800: Later.esm isn't installed; its stages are credited to MyMod.esm
+
+### Changes
+
+- When a master that isn't installed is the reason init can't compare a master's copy of a record, the log line names that master ("Later.esm isn't installed"). A master that is installed but whose copy can't be read still gets "the master's copy can't be read".
+- The CI workflow of the public repository now uses the current majors of its actions (checkout 7, setup-python 7, upload-artifact 7, download-artifact 8), each pinned by commit, so the run has no Node.js 20 warning.
+
 ## 0.2.1 (2026-11-22)
 
 ### What's new
