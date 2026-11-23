@@ -256,7 +256,9 @@ Options:
 
 Names are matched the way the game matches them: Editor IDs, script paths and function names ignore case, and
 record types are read in upper case. A record, stage, script or function that is missing now and was also missing
-when you took the baseline is a `NOTE` (check the name), not a rebuild.
+when you took the baseline is a `NOTE` (check the name), not a rebuild. `snapshot` already names the records it
+can't find on its summary line, and `check` compares records again only after the master changed, so check the
+snapshot's line for typos.
 
 The baseline holds only sizes, hashes, FormIDs, stage numbers, condition counts and function names. It never holds
 record contents or script code, so you can keep it in a public repository.
