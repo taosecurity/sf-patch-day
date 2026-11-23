@@ -538,7 +538,8 @@ def _master_attached(masters, dirs, folder, wanted, missing=None):
     masters that holds each record has them: the copy the mod's override replaces. A record no master holds isn't in
     the result. When a master isn't found or can't be read, every wanted record it might hold (all of them when its
     master list is unknown) is None: that master might hold the last copy. When missing (a dict) is given, it gets
-    {key: master's name} for each None that is because that master isn't installed."""
+    {key: master's name} for each None that is because that master isn't installed (it might hold the record; with
+    its master list unknown, nobody can tell whether it does)."""
     out = {}
     missing = {} if missing is None else missing
     tops = {t for t in wanted.values()}
@@ -840,7 +841,7 @@ def analyze(mod_path, dirs, tools):
                                         f"too; its stages aren't credited to {mod}")
                 else:
                     why = ("no master's copy of the record was found" if key not in copies else
-                           f"{not_installed[key]} isn't installed" if key in not_installed else
+                           f"{not_installed[key]} isn't installed and might hold the last copy" if key in not_installed else
                            "the master's copy can't be read" if names is None else
                            "your mod added it to the record" if n not in names else
                            f"your mod changed its propert{'y' if len(changed) == 1 else 'ies'} {', '.join(changed)}")

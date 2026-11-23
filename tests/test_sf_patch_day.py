@@ -1271,7 +1271,7 @@ class TestInitScriptOwnership(Temp):
             ("callmethod", ["ident:SetStage", "ident:self", "ident:::t1", "int:20"])])])
         damaged = b"\x40\x00\x00\x00" + b"not zlib data"
         cases = (("damaged", ["Starfield.esm", "TestMaster.esm"], [20], "the master's copy can't be read"),
-                 ("not installed", None, [20], "Later.esm isn't installed"),
+                 ("not installed", None, [20], "Later.esm isn't installed and might hold the last copy"),
                  ("can't hold it", ["Starfield.esm"], None, "the master's copy of the record has it too"))
         for name, later_masters, stages, logged in cases:
             with self.subTest(name):
@@ -1364,7 +1364,8 @@ class TestInitScriptOwnership(Temp):
             scripts.MAX_SCRIPTS = old
         self.assertEqual(code, 0, out)
         with open(log_file, encoding="utf-8") as f:
-            self.assertIn("every function is native (a DLL's script)", f.read())
+            self.assertIn("every function is native (a DLL's script): left out past the safety limit, not counted as "
+                          "ScriptMod.esm's", f.read())
 
     def test_safety_limit_counts_only_the_mods_scripts(self):
         # The plugin is in the shared Data folder. ZZ:Quest is a loose-installed master's script that the mod's quest

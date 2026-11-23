@@ -17,11 +17,11 @@ This is the tool's real output on a made-up test mod whose master list names a p
     note: masters not found, so FE/FD record numbers may be misread: Later.esm (give --data or --plugin-dir)
     Next: check the file, add anything else your mod relies on, then run drift snapshot (with sf-pex-tools, for the function checks).
 
-    init.log: TM:Starter on QUST 01000800: Later.esm isn't installed; its stages are credited to MyMod.esm
+    init.log: TM:Starter on QUST 01000800: Later.esm isn't installed and might hold the last copy; its stages are credited to MyMod.esm
 
 ### Changes
 
-- When a master that isn't installed is the reason init can't compare a master's copy of a record, the log line names that master ("Later.esm isn't installed"). A master that is installed but whose copy can't be read still gets "the master's copy can't be read".
+- When a master that isn't installed is the reason init can't compare a master's copy of a record, the log line names that master ("Later.esm isn't installed and might hold the last copy"). A master that is installed but whose copy can't be read still gets "the master's copy can't be read".
 - The CI workflow of the public repository now uses the current majors of its actions (checkout 7, setup-python 7, upload-artifact 7, download-artifact 8), each pinned by commit, so the run has no Node.js 20 warning.
 
 ## 0.2.1 (2026-11-22)
