@@ -382,7 +382,8 @@ Without `--game` or `--data`, sf-patch-day looks for the game in this order:
 2. **Game Pass:** `<drive>:\XboxGames\Starfield\Content` on every drive. SFSE doesn't support the Game Pass
    version, so `dlls` says so. `drift` works normally.
 
-Mod managers keep mods outside the game folder until they deploy them:
+Vortex keeps mods in its staging folder and deploys them into Data. MO2 never copies them there. It keeps them in its own
+folders and shows them only to programs it starts:
 
 - **Mod Organizer 2:** each mod is a folder under `mods\` (by default in `%LOCALAPPDATA%\ModOrganizer\Starfield`,
   or next to `ModOrganizer.exe` for a portable install). Check them with
