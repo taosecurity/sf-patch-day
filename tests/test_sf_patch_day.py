@@ -340,6 +340,18 @@ class TestFramework(Temp):
             ":: SFSE/Plugins/Sym.pdb"))
         self.assertEqual(rs["download.zip :: SFSE/Plugins/Alone.dll"]["framework"], "can't tell")
 
+    def test_empty_pdb_in_a_zip_is_logged_as_empty(self):
+        from unittest import mock
+        z = self.p("empty-pdb.zip")
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("SFSE/Plugins/E.dll", mk.sfse_plugin())
+            zf.writestr("SFSE/Plugins/E.pdb", b"")
+        with mock.patch.object(dlls.log, "info") as info:
+            r = dlls.judge(dlls.collect([z])[0][0], (1, 16, 300), True, None)
+        self.assertIsNone(r["framework_evidence"]["pdb"])
+        said = [c.args[1] for c in info.call_args_list if c.args[0] == "framework"]
+        self.assertTrue(any(s.endswith("E.pdb: skipped (empty)") for s in said), said)
+
     def test_report_json_text_and_exit(self):
         folder = self.p("Plugins")
         write(os.path.join(folder, "Clsf.dll"), mk.sfse_plugin(compatible=[V300], extra=mk.COMMONLIBSF_TEXT))

@@ -159,7 +159,8 @@ def _pdb_counts(item):
         with zipfile.ZipFile(item.path) as z:
             info = z.getinfo(item.pdb)
             if info.file_size == 0 or info.file_size > MAX_ZIP_MEMBER:
-                log.info("framework", f"{label}: skipped ({info.file_size // 1048576} MB; the limit is 512 MB)")
+                log.info("framework", f"{label}: skipped ({info.file_size // 1048576} MB; the limit is 512 MB)"
+                         if info.file_size else f"{label}: skipped (empty)")
                 return None, None
             return label, framework.scan(z.read(info), is_pdb=True)
     except (OSError, zipfile.BadZipFile, KeyError, ValueError, RuntimeError, NotImplementedError, EOFError,
