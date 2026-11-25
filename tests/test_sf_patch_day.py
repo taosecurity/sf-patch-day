@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
 import makers as mk  # noqa: E402
-from sf_patch_day import cli, dlls, drift, pe, pextools, scripts  # noqa: E402
+from sf_patch_day import cli, creations, dlls, drift, paths, pe, pextools, scripts  # noqa: E402
 from sf_patch_day.plugin import Plugin  # noqa: E402
 
 V244, V300 = mk.game_version(1, 16, 244), mk.game_version(1, 16, 300)
@@ -1687,6 +1687,226 @@ class TestInitScriptOwnership(Temp):
                       "hand", out)
         with open(self.p("m.json"), encoding="utf-8") as f:
             self.assertIn("its scripts couldn't be read", json.load(f)["about"])
+
+
+# ---- creations: the Creations change report -------------------------------------------------------------------
+ID_A, ID_B, ID_C, ID_D = ("TM_00000000-0000-0000-0000-00000000000" + c for c in "abcd")
+
+
+class TestCreations(Temp):
+    def setUp(self):
+        super().setUp()
+        self.cat, self.saved = self.p("game", "ContentCatalog.txt"), self.p("mine", "ContentCatalog-saved.txt")
+
+    def base(self):
+        return {ID_A: mk.creation("Example Ships", files=["ExampleShips.esm", "ExampleShips - Main.ba2"]),
+                ID_B: mk.creation("Old Example Patch", version="1757190740.0.9.0"),
+                ID_C: mk.creation("Example Hats")}
+
+    def go(self, *extra):
+        return run("creations", "--catalog", self.cat, "--saved", self.saved, *extra)
+
+    def first(self, entries=None):
+        write(self.cat, mk.catalog(self.base() if entries is None else entries))
+        code, out = self.go()
+        self.assertEqual(code, 0, out)
+        return out
+
+    def test_first_run_saves_a_byte_copy(self):
+        out = self.first()
+        self.assertIn("(3 Creations)", out)
+        self.assertIn("RESULT: SAVED a first copy", out)
+        with open(self.cat, "rb") as a, open(self.saved, "rb") as b:
+            self.assertEqual(a.read(), b.read())
+        code, out = self.go("--json")
+        self.assertEqual(code, 0, out)
+        rep = json.loads(out)
+        self.assertEqual((rep["result"], rep["exit"], rep["counts"]["unchanged"]), ("no changes", 0, 3))
+
+    def test_first_run_json(self):
+        write(self.cat, mk.catalog(self.base()))
+        code, out = self.go("--json")
+        rep = json.loads(out)
+        self.assertEqual((code, rep["result"], rep["first_copy_saved"], rep["counts"]["current"]),
+                         (0, "first copy saved", True, 3))
+
+    def test_no_change_and_timestamp_only(self):
+        self.first()
+        code, out = self.go()
+        self.assertEqual(code, 0, out)
+        self.assertIn("RESULT: NO CHANGES since the saved copy", out)
+        e = self.base()
+        e[ID_A]["Timestamp"] += 500
+        e[ID_C]["Timestamp"] += 9
+        write(self.cat, mk.catalog(e))
+        code, out = self.go()
+        self.assertEqual(code, 0, out)
+        self.assertIn("Unchanged: 1. Timestamp-only changes (the game rewrites these when you load a save): 2", out)
+        self.assertNotIn("UPDATED", out)
+
+    def test_added_removed_updated(self):
+        self.first()
+        e = self.base()
+        del e[ID_B]
+        e[ID_D] = mk.creation("Example Outfits", version="1757190999.1.2.0",
+                              files=["ExampleOutfits.esm", "ExampleOutfits - Main.ba2"])
+        e[ID_A].update(Version="1757191000.1.1.0", FilesSize=1048576, AchievementSafe=False,
+                       Files=["exampleships.ESM", "ExampleShips - Main.ba2",
+                              "ExampleShips - Textures.ba2"], Timestamp=1)
+        e[ID_C]["Title"] = "Example Hats Remastered"
+        write(self.cat, mk.catalog(e))
+        code, out = self.go()
+        self.assertEqual(code, 1, out)
+        self.assertIn(f"ADDED   Example Outfits ({ID_D}) version 1.2.0, files: ExampleOutfits.esm, "
+                      f"ExampleOutfits - Main.ba2", out)
+        self.assertIn(f"REMOVED Old Example Patch ({ID_B}) version 0.9.0, files: OldExamplePatch.esm", out)
+        # The case of a file name doesn't count as a change (Windows file names ignore case).
+        self.assertIn(f"UPDATED Example Ships ({ID_A}): version 1.0.0 -> 1.1.0; files added: ExampleShips - "
+                      f"Textures.ba2; size 0 -> 1048576; achievement-friendly yes -> no", out)
+        self.assertIn(f"UPDATED Example Hats Remastered ({ID_C}): renamed from \"Example Hats\"", out)
+        self.assertIn("RESULT: CHANGES: 1 added, 1 removed, 2 updated.", out)
+        self.assertIn("--save", out)
+        code, out = self.go("--json")
+        rep = json.loads(out)
+        self.assertEqual((code, rep["exit"], rep["result"]), (1, 1, "changes"))
+        self.assertEqual(rep["counts"], {"current": 3, "saved": 3, "added": 1, "removed": 1, "updated": 2,
+                                         "unchanged": 0, "timestamp_only": 0})
+        self.assertEqual(rep["added"][0]["version"], "1757190999.1.2.0")  # JSON keeps the raw version
+        ships = next(u for u in rep["updated"] if u["id"] == ID_A)["changes"]
+        self.assertEqual(ships["version"], {"old": "1757190740.1.0.0", "new": "1757191000.1.1.0"})
+        self.assertEqual(ships["files"], {"added": ["ExampleShips - Textures.ba2"], "removed": []})
+        self.assertEqual(ships["files_size"], {"old": 0, "new": 1048576})
+        self.assertEqual(ships["achievement_safe"], {"old": True, "new": False})
+        self.assertEqual([u["title"] for u in rep["updated"]], ["Example Hats Remastered", "Example Ships"])
+
+    def test_files_removed_and_unknown_field(self):
+        self.first()
+        e = self.base()
+        e[ID_A]["Files"] = ["ExampleShips.esm"]
+        e[ID_C]["NewField"] = 7
+        write(self.cat, mk.catalog(e))
+        code, out = self.go()
+        self.assertEqual(code, 1, out)
+        self.assertIn("files removed: ExampleShips - Main.ba2", out)
+        self.assertIn(f"UPDATED Example Hats ({ID_C}): NewField null -> 7", out)
+
+    def test_save_replaces_and_plain_run_leaves_it(self):
+        self.first()
+        e = self.base()
+        del e[ID_C]
+        write(self.cat, mk.catalog(e))
+        with open(self.saved, "rb") as f:
+            before = f.read()
+        for _ in range(2):  # without --save the report repeats and the saved copy stays as it was
+            code, out = self.go()
+            self.assertEqual(code, 1, out)
+            with open(self.saved, "rb") as f:
+                self.assertEqual(f.read(), before)
+        code, out = self.go("--save")
+        self.assertEqual(code, 1, out)
+        self.assertIn("the saved copy is now the current catalog", out)
+        with open(self.cat, "rb") as a, open(self.saved, "rb") as b:
+            self.assertEqual(a.read(), b.read())
+        self.assertEqual([n for n in os.listdir(self.p("mine")) if n.endswith(".tmp")], [])
+        code, out = self.go()
+        self.assertEqual(code, 0, out)
+        self.assertIn("RESULT: NO CHANGES", out)
+
+    def test_bad_input(self):
+        code, out = self.go()
+        self.assertEqual(code, 3, out)
+        self.assertIn("the Creations catalog wasn't found", out)
+        self.assertIn("Fix: start the game once", out)
+        self.assertFalse(os.path.exists(self.saved))
+        for data, says in ((b"{not json", "isn't valid JSON"), (b"[1, 2]", "not a JSON object"),
+                           (b'{"TM_x": {"Title": "A"}}', "no \"ContentCatalog\" header"),
+                           (b'{"ContentCatalog": {}, "TM_x": 5}', "isn't an object"), (b"\xff\xfe{", "UTF-8")):
+            write(self.cat, data)
+            code, out = self.go()
+            self.assertEqual(code, 3, out)
+            self.assertIn(says, out)
+            self.assertIn("Fix:", out)
+            self.assertFalse(os.path.exists(self.saved))
+        self.first()
+        write(self.saved, b"broken")
+        code, out = self.go()
+        self.assertEqual(code, 3, out)
+        self.assertIn("the saved copy", out)
+        self.assertIn("Fix: delete it, or give --saved another file", out)
+
+    def test_too_big(self):
+        old = creations.MAX_BYTES
+        creations.MAX_BYTES = 10
+        try:
+            write(self.cat, mk.catalog(self.base()))
+            code, out = self.go()
+        finally:
+            creations.MAX_BYTES = old
+        self.assertEqual(code, 3, out)
+        self.assertIn("over the 64 MB", out)
+
+    def test_saved_in_game_catalog_folder_refused(self):
+        write(self.cat, mk.catalog(self.base()))
+        for saved in (self.p("game", "copy.txt"), self.cat, self.p("game", "sub", "copy.txt")):
+            code, out = run("creations", "--catalog", self.cat, "--saved", saved)
+            self.assertEqual(code, 3, out)
+            self.assertIn("in the folder that holds the game's catalog", out)
+        self.assertEqual(sorted(os.listdir(self.p("game"))), ["ContentCatalog.txt"])
+
+    def test_bom_and_missing_fields(self):
+        write(self.cat, mk.catalog(self.base(), bom=True))
+        self.assertEqual(self.go()[0], 0)
+        e = self.base()
+        e[ID_D] = {"Timestamp": 3}
+        write(self.cat, mk.catalog(e, bom=True))
+        code, out = self.go()
+        self.assertEqual(code, 1, out)
+        self.assertIn(f"ADDED   (no title) ({ID_D}) version (none), files: (none)", out)
+
+    def test_show_version_and_defaults(self):
+        self.assertEqual(creations.show_version("1757190740.1.0.0"), "1.0.0")
+        self.assertEqual(creations.show_version("1.0.0"), "1.0.0")
+        self.assertEqual(creations.show_version("123.4"), "123.4")
+        self.assertEqual(creations.show_version(None), "")
+        env = {"LOCALAPPDATA": self.p("local"), "XDG_STATE_HOME": self.p("state")}
+        saved = paths.default_saved_catalog(env)
+        self.assertTrue(saved.endswith(os.path.join("sf-patch-day", "ContentCatalog-saved.txt")), saved)
+        cats = paths.candidate_catalogs(env)
+        self.assertTrue(cats and all(c.endswith(os.path.join("Starfield", "ContentCatalog.txt")) for c in cats))
+        if sys.platform == "win32":
+            self.assertEqual(cats, [os.path.join(self.p("local"), "Starfield", "ContentCatalog.txt")])
+            self.assertTrue(saved.startswith(self.p("local")))
+        else:
+            self.assertTrue(saved.startswith(self.p("state")))
+            self.assertTrue(all("compatdata" in c for c in cats))
+
+    def test_default_catalog_missing_names_the_place(self):
+        old = paths.candidate_catalogs
+        paths.candidate_catalogs = lambda env=None: [self.p("nowhere", "ContentCatalog.txt")]
+        try:
+            code, out = run("creations", "--saved", self.saved)
+        finally:
+            paths.candidate_catalogs = old
+        self.assertEqual(code, 3, out)
+        self.assertIn(self.p("nowhere", "ContentCatalog.txt"), out)
+
+    def test_verbose_logs_timestamp_only_ids(self):
+        self.first()
+        e = self.base()
+        e[ID_C]["Timestamp"] = 1
+        write(self.cat, mk.catalog(e))
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = cli.main(["creations", "--catalog", self.cat, "--saved", self.saved, "--verbose"])
+        self.assertEqual(code, 0)
+        self.assertIn(f"Timestamp-only changes (not reported): ['{ID_C}']", err.getvalue())
+        self.assertIn("[end] exit code 0", err.getvalue())
+
+    def test_help(self):
+        code, out = run("creations", "--help")
+        self.assertEqual(code, 0)
+        self.assertIn("--save", out)
+        self.assertIn("Timestamp", out)
 
 
 if __name__ == "__main__":

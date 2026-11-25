@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.4.0
+
+### What's new
+
+sf-patch-day 0.4.0 adds the `creations` command, which lists the Creations that were added, removed or updated since you last looked. The game keeps the list of your installed Creations in `ContentCatalog.txt`. The first run saves a copy of that file, and each later run compares the game's file with the copy and names every Creation whose version, title, files, size or achievement setting changed. Run it after a game update or a visit to the Creations menu, so you know which Creations to test. The game's file is only read. The other commands haven't changed.
+
+### Example
+
+This run uses two made-up catalogs (every name in it is made up):
+
+    > .\sf-patch-day.cmd creations
+    Creations catalog: C:\Users\Player\AppData\Local\Starfield\ContentCatalog.txt (4 Creations)
+    Compared with: C:\Users\Player\AppData\Local\sf-patch-day\ContentCatalog-saved.txt (saved 2026-11-20 14:03, 4 Creations)
+    ADDED   Example Outfits (TM_55555555-5555-5555-5555-555555555555) version 1.2.0, files: ExampleOutfits.esm, ExampleOutfits - Main.ba2
+    REMOVED Old Example Patch (TM_22222222-2222-2222-2222-222222222222) version 0.9.0, files: OldExamplePatch.esm
+    UPDATED Example Ships (TM_11111111-1111-1111-1111-111111111111): version 1.0.0 -> 1.1.0; files added: ExampleShips - Textures.ba2
+    Unchanged: 1. Timestamp-only changes (the game rewrites these when you load a save): 1, not shown.
+    RESULT: CHANGES: 1 added, 1 removed, 1 updated. Test these Creations before you play; run with --save to make this the new saved copy.
+
+On a real Steam catalog of 58 Creations, with one entry edited and one removed from the saved copy, the result line read `CHANGES: 1 added, 0 removed, 1 updated`, and 28 entries whose only change was the game's `Timestamp` were counted but not listed.
+
+### Changes
+
+- New command `creations [--catalog FILE] [--saved FILE] [--save] [--json]`. It reads `%LOCALAPPDATA%\Starfield\ContentCatalog.txt` (Steam and Game Pass; on Linux, the Proton prefix of each Steam library) and keeps its copy in `%LOCALAPPDATA%\sf-patch-day\ContentCatalog-saved.txt` (on Linux, `$XDG_STATE_HOME/sf-patch-day`). README.md, "creations: what a Creations update changed", explains it.
+- The saved copy changes only on the first run and with `--save`. A saved copy in the game folder or the catalog's folder is refused.
+- `Timestamp` is never compared, because the game rewrites it when a save loads.
+- Exit codes: 0 no changes or a first copy saved, 1 changes, 3 can't check.
+
 ## 0.3.0 (2026-11-24)
 
 ### What's new

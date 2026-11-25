@@ -289,3 +289,22 @@ def ba2(files):
         blobs += data
     names = b"".join(_wstr(n) for n, _ in files)
     return struct.pack("<4sI4sIQ", b"BTDX", 1, b"GNRL", len(files), off + len(blobs)) + records + blobs + names
+
+
+# ---- the Creations catalog (ContentCatalog.txt) ---------------------------------------------------------------
+def creation(title, version="1757190740.1.0.0", files=None, size=0, safe=True, timestamp=1757200000, **extra):
+    """One made-up catalog entry, with the six fields the game writes."""
+    e = {"AchievementSafe": safe, "Files": list(files if files is not None else [title.replace(" ", "") + ".esm"]),
+         "FilesSize": size, "Timestamp": timestamp, "Title": title, "Version": version}
+    e.update(extra)
+    return e
+
+
+def catalog(entries, version="1.1", bom=False):
+    """A made-up ContentCatalog.txt (bytes): the header, then {id: entry}."""
+    import json
+    data = {"ContentCatalog": {"Description": "This file holds a database of any Creations downloaded or "
+                                              "installed, in JSON format", "Version": version}}
+    data.update(entries)
+    raw = json.dumps(data, indent=2).encode("utf-8")
+    return (b"\xef\xbb\xbf" + raw) if bom else raw

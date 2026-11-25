@@ -95,3 +95,38 @@ def data_folder(game):
 
 def sfse_plugins_folder(game):
     return os.path.join(game, "Data", "SFSE", "Plugins")
+
+
+# ---- the Creations catalog (creations command) ----------------------------------------------------------------
+STARFIELD_APP_ID = "1716740"
+
+
+def candidate_catalogs(env=None):
+    """Where the game keeps ContentCatalog.txt, in search order. The game names it with the same folder as
+    Plugins.txt: %LOCALAPPDATA%\\Starfield for Steam and Game Pass alike; under Proton, inside each Steam
+    library's compatdata prefix."""
+    env = os.environ if env is None else env
+    if sys.platform == "win32":
+        local = env.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
+        return [os.path.join(local, "Starfield", "ContentCatalog.txt")]
+    out, seen = [], set()
+    for root in _steam_roots(env):
+        for lib in _libraries(root):
+            p = os.path.join(lib, "steamapps", "compatdata", STARFIELD_APP_ID, "pfx", "drive_c", "users",
+                             "steamuser", "AppData", "Local", "Starfield", "ContentCatalog.txt")
+            key = os.path.normpath(p)
+            if key not in seen:
+                seen.add(key)
+                out.append(p)
+    return out
+
+
+def default_saved_catalog(env=None):
+    """Where creations keeps its saved copy: %LOCALAPPDATA%\\sf-patch-day on Windows, $XDG_STATE_HOME/sf-patch-day
+    (default ~/.local/state) elsewhere."""
+    env = os.environ if env is None else env
+    if sys.platform == "win32":
+        base = env.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
+    else:
+        base = env.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
+    return os.path.join(base, "sf-patch-day", "ContentCatalog-saved.txt")

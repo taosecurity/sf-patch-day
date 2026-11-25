@@ -7,7 +7,7 @@ import os
 import sys
 import traceback
 
-from . import VERSION, dlls, drift, log, paths, pe, pextools
+from . import VERSION, creations, dlls, drift, log, paths, pe, pextools
 from . import plugin as plugin_module
 from .plugin import Plugin, PluginError, PROBE_TYPES
 
@@ -38,7 +38,7 @@ def where(p):
 def build_parser():
     ap = Parser(prog="sf-patch-day", description=(
         "After a Starfield update: which SFSE plugins still load (dlls), and did the update change what your mod "
-        "relies on (drift). Read-only on the game folder. Options go after the command name."))
+        "relies on (drift), and what a Creations update changed (creations). Read-only on the game folder. Options go after the command name."))
     ap.add_argument("--version", action="version", version=f"sf-patch-day {VERSION}")
     sub = ap.add_subparsers(dest="cmd", metavar="command", parser_class=Parser)
 
@@ -81,6 +81,24 @@ def build_parser():
         x.add_argument("--pex-tools", metavar="FOLDER", help="the sf-pex-tools folder (needed for function checks)")
         where(x)
         common(x)
+
+    c = sub.add_parser("creations", help="what a Creations update changed: Creations added, removed or updated "
+                                         "since the saved copy of the game's ContentCatalog.txt", description=(
+        "Compares the game's Creations catalog (ContentCatalog.txt) with a copy saved on an earlier run and lists "
+        "the Creations added, removed or updated (version, title, files, size, achievement-friendly). The first "
+        "run saves a copy and reports nothing. Later runs leave the saved copy alone unless you add --save. The "
+        "game's Timestamp field is not compared, because the game rewrites it when a save loads. The game's file "
+        "is only read. Exit 0 no changes (or a first copy saved), 1 changes, 3 can't check."))
+    c.add_argument("--catalog", metavar="FILE", help="the game's ContentCatalog.txt (default: "
+                                                     "%%LOCALAPPDATA%%\\Starfield\\ContentCatalog.txt, for Steam and "
+                                                     "Game Pass; on Linux, the Proton prefix of each Steam library)")
+    c.add_argument("--saved", metavar="FILE", help="the saved earlier copy (default: "
+                                                   "%%LOCALAPPDATA%%\\sf-patch-day\\ContentCatalog-saved.txt; on "
+                                                   "Linux, $XDG_STATE_HOME/sf-patch-day)")
+    c.add_argument("--save", action="store_true", help="after the report, make the current catalog the new saved "
+                                                       "copy")
+    c.add_argument("--json", action="store_true", help="print the report as JSON")
+    common(c)
 
     f = sub.add_parser("fingerprint", help="a plugin's probe FormID and highest own FormID (for in-game checks)")
     f.add_argument("plugin", help="the plugin file, or a name looked up in --data and --plugin-dir")
@@ -297,6 +315,89 @@ def cmd_drift(args):
     return code
 
 
+def cmd_creations(args):
+    if args.catalog:
+        catalog, tried = args.catalog, [args.catalog]
+    else:
+        tried = paths.candidate_catalogs()
+        catalog = next((p for p in tried if os.path.isfile(p)), None)
+    log.info("creations", f"catalog places tried: {tried}; using {catalog}")
+    if not catalog or not os.path.isfile(catalog):
+        where_ = catalog or ", ".join(tried) or "(no place to look)"
+        return fail(f"the Creations catalog wasn't found ({where_}). Fix: start the game once and open the Creations "
+                    f"menu, or give --catalog <path to ContentCatalog.txt>.")
+    saved = args.saved or paths.default_saved_catalog()
+    log.info("creations", f"saved copy: {saved}" + ("" if args.saved else " (the default)"))
+    if inside(saved, os.path.dirname(os.path.abspath(catalog))):
+        return fail(f"--saved {saved} is in the folder that holds the game's catalog. sf-patch-day never writes "
+                    f"there. Fix: give --saved a file in your own folder, or leave it out for the default.")
+    game, _ = paths.find_game(None)
+    if game and inside(saved, game):
+        return fail(f"--saved {saved} is inside the game folder. sf-patch-day never writes there. Fix: give --saved a "
+                    f"file in your own folder, or leave it out for the default.")
+    raw, header, now = creations.read(catalog, "Creations catalog", "start the game once and open the Creations "
+                                      "menu so it writes the file again, or give --catalog the right file.")
+    if os.path.isdir(saved):
+        return fail(f"--saved {saved} is a folder. Fix: give --saved a file name, such as "
+                    f"{os.path.join(saved, 'ContentCatalog-saved.txt')}.")
+    head = f"Creations catalog: {catalog} ({len(now)} Creations)"
+    if not os.path.exists(saved):
+        creations.save_copy(raw, saved)
+        if args.json:
+            say(json.dumps({"catalog": catalog, "saved": saved, "saved_at": None, "first_copy_saved": True,
+                            "saved_now": True, "catalog_version": None,
+                            "counts": {"current": len(now), "saved": 0, "added": 0, "removed": 0, "updated": 0,
+                                       "unchanged": 0, "timestamp_only": 0},
+                            "added": [], "removed": [], "updated": [], "result": "first copy saved", "exit": 0},
+                           indent=1))
+        else:
+            say(head)
+            say(f"RESULT: SAVED a first copy of the catalog to {saved}. Run sf-patch-day creations again after the "
+                f"next Creations or game update to see what changed.")
+        return 0
+    when = creations.saved_time(saved)
+    _raw, old_header, old = creations.read(saved, "saved copy", "delete it, or give --saved another file, then run "
+                                           "again to save a fresh copy.")
+    rep = creations.compare(old, now)
+    n_changes = len(rep["added"]) + len(rep["removed"]) + len(rep["updated"])
+    code = 1 if n_changes else 0
+    ov, nv = old_header.get("Version"), header.get("Version")
+    if args.save:
+        creations.save_copy(raw, saved)
+    if args.json:
+        say(json.dumps({"catalog": catalog, "saved": saved,
+                        "saved_at": when.isoformat(timespec="seconds") if when else None,
+                        "first_copy_saved": False, "saved_now": bool(args.save),
+                        "catalog_version": None if ov == nv else {"old": ov, "new": nv},
+                        "counts": {"current": len(now), "saved": len(old), "added": len(rep["added"]),
+                                   "removed": len(rep["removed"]), "updated": len(rep["updated"]),
+                                   "unchanged": rep["unchanged"], "timestamp_only": rep["timestamp_only"]},
+                        "added": rep["added"], "removed": rep["removed"], "updated": rep["updated"],
+                        "result": "changes" if n_changes else "no changes", "exit": code}, indent=1))
+        return code
+    say(head)
+    say(f"Compared with: {saved} (saved {when.strftime('%Y-%m-%d %H:%M') if when else 'at an unknown time'}, "
+        f"{len(old)} Creations)")
+    if ov != nv:
+        say(f"Catalog format version: {ov} -> {nv}")
+    for e in rep["added"]:
+        say(f"ADDED   {creations.entry_text(e)}")
+    for e in rep["removed"]:
+        say(f"REMOVED {creations.entry_text(e)}")
+    for u in rep["updated"]:
+        say(f"UPDATED {u['title'] or '(no title)'} ({u['id']}): {creations.change_text(u['changes'])}")
+    say(f"Unchanged: {rep['unchanged']}. Timestamp-only changes (the game rewrites these when you load a save): "
+        f"{rep['timestamp_only']}, not shown.")
+    if n_changes:
+        tail = ("The saved copy is now the current catalog." if args.save else
+                "Run with --save to make this the new saved copy.")
+        say(f"RESULT: CHANGES: {len(rep['added'])} added, {len(rep['removed'])} removed, {len(rep['updated'])} "
+            f"updated. Test these Creations before you play; {tail[0].lower() + tail[1:]}")
+    else:
+        say("RESULT: NO CHANGES since the saved copy" + (" (saved again with --save)." if args.save else "."))
+    return code
+
+
 def cmd_fingerprint(args):
     dirs, _ = data_dirs(args) if (args.data or args.plugin_dir or not os.path.isfile(args.plugin)) else ([], None)
     path = args.plugin if os.path.isfile(args.plugin) else drift.find_file(args.plugin, dirs, "Plugin")
@@ -331,7 +432,7 @@ def missing_step(args, drift_step=False):
         pass
     sys.stdout.flush()  # the help first, so "see the help above" holds in a terminal
     what = ("no drift step given. Fix: run sf-patch-day drift init, snapshot or check" if is_drift else
-            "no command given. Fix: run sf-patch-day dlls, drift or fingerprint")
+            "no command given. Fix: run sf-patch-day dlls, drift, creations or fingerprint")
     print(f"RESULT: CANNOT CHECK: {what} (see the help above).", file=sys.stderr)
     return CANNOT
 
@@ -353,9 +454,10 @@ def main(argv=None):
         log_open = True
         log.info("start", f"sf-patch-day {VERSION}, Python {sys.version.split()[0]}, {sys.platform}, "
                           f"args {argv or sys.argv[1:]}")
-        code = {"dlls": cmd_dlls, "drift": cmd_drift, "fingerprint": cmd_fingerprint}[args.cmd](args)
+        code = {"dlls": cmd_dlls, "drift": cmd_drift, "creations": cmd_creations,
+                "fingerprint": cmd_fingerprint}[args.cmd](args)
         return code
-    except drift.DriftError as e:
+    except (drift.DriftError, creations.CreationsError) as e:
         code = fail(str(e))
         return code
     except KeyboardInterrupt:

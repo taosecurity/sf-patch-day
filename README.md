@@ -2,7 +2,8 @@
 
 sf-patch-day tells you, after a Starfield update, which of your SFSE plugins still load and what each one waits
 for. For mod authors, it also says whether the update changed anything your mod relies on, so you know whether to
-rebuild it.
+rebuild it. And it lists which Creations were added, removed or updated since you last looked, so you know what to
+test.
 
 Download the latest zip from [Releases](https://github.com/taosecurity/sf-patch-day/releases), unzip it, open a
 Command Prompt in the folder (see [Install](#install)) and run:
@@ -67,6 +68,7 @@ This tool was built with [Claude Code](https://claude.com/claude-code).
 - [dlls: which SFSE plugins still load](#dlls-which-sfse-plugins-still-load)
 - [drift: does my mod need a rebuild](#drift-does-my-mod-need-a-rebuild)
 - [The mods file](#the-mods-file)
+- [creations: what a Creations update changed](#creations-what-a-creations-update-changed)
 - [fingerprint](#fingerprint)
 - [Where things are: Steam, Game Pass, MO2 and Vortex](#where-things-are-steam-game-pass-mo2-and-vortex)
 - [Exit codes](#exit-codes)
@@ -83,13 +85,13 @@ needs Python 3.9 or newer.
 1. Install Python 3.11 or newer from [python.org](https://www.python.org/downloads/). On the first screen of the
    installer, tick **Add python.exe to PATH**. To check that it worked, open a new Command Prompt and type
    `python --version`. It should print a version number.
-2. Download `sf-patch-day-0.3.0.zip` and its `.sha256` file from the
+2. Download `sf-patch-day-0.4.0.zip` and its `.sha256` file from the
    [releases page](https://github.com/taosecurity/sf-patch-day/releases) and unzip the zip anywhere. If you want
-   to check the download, run `certutil -hashfile sf-patch-day-0.3.0.zip SHA256` (on Linux,
-   `sha256sum sf-patch-day-0.3.0.zip`) and compare the result with the `.sha256` file.
+   to check the download, run `certutil -hashfile sf-patch-day-0.4.0.zip SHA256` (on Linux,
+   `sha256sum sf-patch-day-0.4.0.zip`) and compare the result with the `.sha256` file.
 3. Open the unzipped folder in File Explorer, click the address bar at the top, type `cmd` and press Enter. A
    Command Prompt window opens in that folder, ready for the commands in this README.
-4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.3.0`.
+4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.4.0`.
 
 `.\sf-patch-day.cmd` works in both Command Prompt and PowerShell. It only starts `python -I sf-patch-day.py` with the
 options you give it, so on Linux type `python3 -I sf-patch-day.py` instead. To check the install
@@ -416,6 +418,48 @@ type, with up to 20 FormIDs (the `--verbose` log lists every one).
 
 Check the file and add anything else by hand. The same mod and the same game files always give the same file.
 
+## creations: what a Creations update changed
+
+The game keeps a list of the Creations you have installed in `ContentCatalog.txt`: each one's title, version and
+files. `creations` compares that list with a copy it saved on an earlier run, and lists the Creations that were
+added, removed or updated since then. Run it after a game update or a visit to the Creations menu, before you test.
+
+```
+.\sf-patch-day.cmd creations
+```
+
+The first run saves a copy of the catalog and reports nothing. Run it again after the next update to see what
+changed. This run uses two made-up catalogs (every name in it is made up):
+
+```
+> .\sf-patch-day.cmd creations
+Creations catalog: C:\Users\Player\AppData\Local\Starfield\ContentCatalog.txt (4 Creations)
+Compared with: C:\Users\Player\AppData\Local\sf-patch-day\ContentCatalog-saved.txt (saved 2026-11-20 14:03, 4 Creations)
+ADDED   Example Outfits (TM_55555555-5555-5555-5555-555555555555) version 1.2.0, files: ExampleOutfits.esm, ExampleOutfits - Main.ba2
+REMOVED Old Example Patch (TM_22222222-2222-2222-2222-222222222222) version 0.9.0, files: OldExamplePatch.esm
+UPDATED Example Ships (TM_11111111-1111-1111-1111-111111111111): version 1.0.0 -> 1.1.0; files added: ExampleShips - Textures.ba2
+Unchanged: 1. Timestamp-only changes (the game rewrites these when you load a save): 1, not shown.
+RESULT: CHANGES: 1 added, 1 removed, 1 updated. Test these Creations before you play; run with --save to make this the new saved copy.
+```
+
+- **Where it looks:** `%LOCALAPPDATA%\Starfield\ContentCatalog.txt`, for Steam and Game Pass alike. On Linux
+  (Proton), the same folder inside each Steam library's `compatdata/1716740` prefix. Give another file with
+  `--catalog <file>`. The game's file is only read.
+- **The saved copy:** `%LOCALAPPDATA%\sf-patch-day\ContentCatalog-saved.txt` (on Linux,
+  `$XDG_STATE_HOME/sf-patch-day`, by default `~/.local/state/sf-patch-day`). It is an exact copy of the game's file,
+  so you can open it. Give another file with `--saved <file>`. sf-patch-day refuses a saved copy in the game folder
+  or in the folder that holds the catalog.
+- **The saved copy stays as it is** until you add `--save`, so running the command twice shows the same report.
+  When you have looked at the changes, run it with `--save` to make the current catalog the new starting point.
+- **What counts as a change:** a Creation's version, title, files (compared without regard to upper or lower
+  case), size, or whether it is achievement-friendly, and any field a later game version adds. The version is
+  shown without the date number the game puts in front of it (`1757190740.1.0.0` shows as `1.0.0`); `--json` keeps
+  it whole. The `Timestamp` field is never compared, because the game rewrites it when a save loads. Those entries
+  are only counted, and `--verbose` lists their IDs.
+- **JSON:** `--json` prints `counts`, `added`, `removed`, `updated` (each with its `changes`), `result` and `exit`.
+- **Exit codes:** 0 no changes (or a first copy saved), 1 changes, 3 can't check (the catalog is missing or broken,
+  or the saved copy is broken; the message says how to fix it).
+
 ## fingerprint
 
 `fingerprint` prints two FormIDs of a plugin: its probe FormID and its highest own FormID. The probe is its newest
@@ -457,10 +501,12 @@ folders and shows them only to programs it starts:
 | 2 | At least one plugin is locked to other game versions, or the install is Game Pass (SFSE doesn't run there). | Rebuild: something your mod uses changed. |
 | 3 | A file couldn't be read, or the command was wrong. | A file couldn't be read, or the command was wrong. |
 
-`drift init`, `drift snapshot` and `fingerprint` return 0 on success and 3 on a problem. Scripts should rely on the
-exit code. The rest of this section is for people who read the output from a script:
+`creations` returns 0 when nothing changed or it saved a first copy, 1 when Creations were added, removed or
+updated, and 3 when it can't check. `drift init`, `drift snapshot` and `fingerprint` return 0 on success and 3 on a
+problem. Scripts should rely on the exit code. The rest of this section is for people who read the output from a
+script:
 
-- The text reports of `dlls` and `drift check`, and every failed run, end with a `RESULT:` line.
+- The text reports of `dlls`, `drift check` and `creations`, and every failed run, end with a `RESULT:` line.
 - With `--json`, a finished report is JSON only, with the exit code in its `exit` field. `dlls --json` can return
   such a report with exit 3, listing the files it couldn't read under `problems`.
 - A run that stops before its report prints plain text instead, even with `--json`: any WARNING lines about copies
@@ -484,6 +530,8 @@ the run's exit code. Nothing is logged unless you ask. Include the log when you 
 - `drift` sees only what the mods file lists. `init` fills it from your overrides and, with sf-pex-tools, from your
   compiled scripts, but it can't see quests or stage numbers worked out while the game runs (see
   [What init finds in your scripts](#what-init-finds-in-your-scripts)).
+- `creations` can only show what changed between two copies of the catalog: it needs a copy saved before the
+  update. It reads only the catalog, not the Creations' own files.
 - It doesn't download updates, and it doesn't turn plugins off for you.
 
 ## Found a mistake?
