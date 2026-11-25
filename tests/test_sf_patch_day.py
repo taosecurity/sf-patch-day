@@ -264,6 +264,110 @@ class TestDllsCommand(Temp):
         self.assertEqual(run("dlls", "--no-such-option")[0], 3)
 
 
+# ---- which framework a plugin was built with ----------------------------------------------------------------------
+class TestFramework(Temp):
+    def judge(self, path):
+        return dlls.judge(dlls.collect([path])[0][0], (1, 16, 300), True, None)
+
+    def one(self, name, data, pdb=None):
+        folder = self.p("Plugins")
+        write(os.path.join(folder, name), data)
+        if pdb is not None:
+            write(os.path.join(folder, name[:-4] + ".pdb"), pdb)
+        return self.judge(os.path.join(folder, name))
+
+    def test_commonlibsf(self):
+        r = self.one("Clsf.dll", mk.sfse_plugin(address=4, structure=8, exports=[b"SFSEPlugin_Load"],
+                                                extra=mk.COMMONLIBSF_TEXT + b"Address Library\0"))
+        self.assertEqual(r["framework"], "CommonLibSF")
+        self.assertEqual(r["framework_why"], "2 CommonLibSF source paths, commonlib-shared, 3 RE type names")
+        ev = r["framework_evidence"]
+        self.assertEqual((ev["commonlibsf_paths"], ev["commonlib_shared"], ev["re_types"], ev["sfse_paths"]),
+                         (2, True, 3, 0))
+        self.assertEqual(ev["exports"], ["SFSEPlugin_Load", "SFSEPlugin_Version"])
+        self.assertIsNone(ev["pdb"])
+        self.assertIsNone(ev["pdb_counts"])
+        self.assertTrue(r["uses_address_library"])
+        self.assertEqual(r["address_library_evidence"], ["version data", "Address Library text"])
+
+    def test_plain_sfse(self):
+        r = self.one("Plain.dll", mk.sfse_plugin(address=1, structure=1, extra=mk.PLAIN_SFSE_TEXT))
+        self.assertEqual((r["framework"], r["framework_why"]), ("plain SFSE", "1 SFSE source path; no CommonLibSF signs"))
+        self.assertFalse(r["uses_address_library"])
+        self.assertEqual(r["address_library_evidence"], [])
+
+    def test_cant_tell(self):
+        r = self.one("Quiet.dll", mk.sfse_plugin(address=1, structure=1))
+        self.assertEqual((r["framework"], r["framework_why"]), ("can't tell", "no CommonLibSF or SFSE source signs"))
+        # The bare word is not a sign: another library may name an old CommonLibSF file format.
+        r = self.one("Word.dll", mk.sfse_plugin(extra=b"\0CommonLibSF-Offsets-v{}.bin\0versionlib\0"))
+        self.assertEqual(r["framework"], "can't tell")
+        self.assertEqual(r["address_library_evidence"], ["versionlib file name"])
+        # Two RE names are below the threshold; with an SFSE source path the plugin is plain SFSE.
+        two = b"\0.?AVAlpha@RE@@\0.?AVBeta@RE@@\0"
+        r = self.one("Two.dll", mk.sfse_plugin(extra=two))
+        self.assertEqual((r["framework"], r["framework_why"]),
+                         ("can't tell", "2 RE type names, fewer than 3; no other CommonLibSF or SFSE source signs"))
+        r = self.one("TwoPlain.dll", mk.sfse_plugin(extra=two + mk.PLAIN_SFSE_TEXT))
+        self.assertEqual(r["framework"], "plain SFSE")
+        # CommonLibSF wins when SFSE source paths are there too.
+        r = self.one("Both.dll", mk.sfse_plugin(extra=mk.COMMONLIBSF_TEXT + mk.PLAIN_SFSE_TEXT))
+        self.assertEqual(r["framework"], "CommonLibSF")
+        self.assertIn("1 SFSE source path", r["framework_why"])
+
+    def test_pdb_beside_the_dll(self):
+        r = self.one("Sym.dll", mk.sfse_plugin(), pdb=b"made-up PDB" + mk.CLSF_PDB_TEXT)
+        self.assertEqual(r["framework"], "CommonLibSF")
+        self.assertEqual(r["framework_why"], "1 CommonLibSF source path in its PDB, 4 RE type names in its PDB")
+        self.assertTrue(r["framework_evidence"]["pdb"].endswith("Sym.pdb"))
+        self.assertEqual(r["framework_evidence"]["pdb_counts"]["re_types"], 4)
+        r = self.one("Mixed.dll", mk.sfse_plugin(extra=mk.COMMONLIBSF_TEXT), pdb=mk.CLSF_PDB_TEXT)
+        self.assertIn("2 CommonLibSF source paths in the DLL, 1 in its PDB", r["framework_why"])
+        r = self.one("Empty.dll", mk.sfse_plugin(), pdb=b"")
+        self.assertEqual(r["framework"], "can't tell")  # an empty PDB is skipped
+        self.assertIsNone(r["framework_evidence"]["pdb"])
+
+    def test_pdb_in_a_zip(self):
+        z = self.p("download.zip")
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("SFSE/Plugins/Sym.dll", mk.sfse_plugin())
+            zf.writestr("SFSE/Plugins/Sym.pdb", mk.CLSF_PDB_TEXT)
+            zf.writestr("SFSE/Plugins/Alone.dll", mk.sfse_plugin())
+            zf.writestr("Other/Alone.pdb", mk.CLSF_PDB_TEXT)  # another folder: not beside it
+        rs = {r["file"]: r for r in (dlls.judge(i, (1, 16, 300), True, None) for i in dlls.collect([z])[0])}
+        self.assertEqual(rs["download.zip :: SFSE/Plugins/Sym.dll"]["framework"], "CommonLibSF")
+        self.assertTrue(rs["download.zip :: SFSE/Plugins/Sym.dll"]["framework_evidence"]["pdb"].endswith(
+            ":: SFSE/Plugins/Sym.pdb"))
+        self.assertEqual(rs["download.zip :: SFSE/Plugins/Alone.dll"]["framework"], "can't tell")
+
+    def test_report_json_text_and_exit(self):
+        folder = self.p("Plugins")
+        write(os.path.join(folder, "Clsf.dll"), mk.sfse_plugin(compatible=[V300], extra=mk.COMMONLIBSF_TEXT))
+        write(os.path.join(folder, "Plain.dll"), mk.sfse_plugin(compatible=[V300], extra=mk.PLAIN_SFSE_TEXT))
+        write(os.path.join(folder, "Quiet.dll"), mk.sfse_plugin(compatible=[V300]))
+        write(os.path.join(folder, "Helper.dll"), mk.pe_file(extra=mk.COMMONLIBSF_TEXT))
+        code, out = run("dlls", "--json", "--game-version", "1.16.300", folder)
+        rep = json.loads(out)
+        self.assertEqual(code, 0)  # the framework is information, not a verdict
+        self.assertEqual(rep["frameworks"], {"CommonLibSF": 1, "plain SFSE": 1, "can't tell": 1})
+        helper = next(r for r in rep["plugins"] if r["file"] == "Helper.dll")
+        self.assertNotIn("framework", helper)  # not an SFSE plugin: no framework fields
+        for r in rep["plugins"]:
+            if r["file"] != "Helper.dll":
+                self.assertTrue({"framework", "framework_why", "framework_evidence", "uses_address_library",
+                                 "address_library_evidence"} <= set(r))
+        code, out = run("dlls", "--game-version", "1.16.300", folder)
+        self.assertEqual(code, 0)
+        self.assertIn("    framework: CommonLibSF (2 CommonLibSF source paths, commonlib-shared, 3 RE type names); "
+                      "Address Library: no signs", out)
+        self.assertIn("    framework: plain SFSE (1 SFSE source path; no CommonLibSF signs)", out)
+        self.assertIn("Frameworks: CommonLibSF 1, plain SFSE 1, can't tell 1\nRESULT:", out)
+
+    def test_export_names(self):
+        self.assertEqual(pe.PE(mk.pe_file([b"A", b"B"], b"x" * 8)).export_names(), {b"A", b"B"})
+        self.assertEqual(pe.PE(mk.pe_file()).export_names(), set())
+
+
 # ---- drift ------------------------------------------------------------------------------------------------------
 def master_esm(stages=(10, 20), conditions=(1, 2), glob_value=1.0, compress=False, extra_quest=False):
     quests = [mk.quest(0x01000800, "TM_Quest", stages, compress=compress)]

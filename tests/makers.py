@@ -27,16 +27,20 @@ def game_version(major, minor, build):
 
 
 def pe_file(export=None, block=b"", file_version=None, extra=b""):
-    """A minimal 64-bit PE: one section holding an export table (export name -> block) and/or a VS_FIXEDFILEINFO,
-    plus `extra` bytes (for example a string)."""
+    """A minimal 64-bit PE: one section holding an export table (export name, or a list of names, each -> block)
+    and/or a VS_FIXEDFILEINFO, plus `extra` bytes (for example a string)."""
     sect_va, sect_raw = 0x1000, 0x400
     body = bytearray()
     exp_rva = exp_size = rsrc_rva = rsrc_size = 0
     if export is not None:
+        names = [export] if isinstance(export, bytes) else list(export)
+        n = len(names)
         exp_at = len(body)
         body += bytes(40)
-        name_at = len(body)
-        body += export + b"\0"
+        name_ats = []
+        for name in names:
+            name_ats.append(len(body))
+            body += name + b"\0"
         dll_name_at = len(body)
         body += b"test.dll\0"
         while len(body) % 8:
@@ -44,14 +48,14 @@ def pe_file(export=None, block=b"", file_version=None, extra=b""):
         block_at = len(body)
         body += block
         funcs_at = len(body)
-        body += struct.pack("<I", sect_va + block_at)
+        body += struct.pack("<I", sect_va + block_at) * n
         names_at = len(body)
-        body += struct.pack("<I", sect_va + name_at)
+        body += b"".join(struct.pack("<I", sect_va + a) for a in name_ats)
         ords_at = len(body)
-        body += struct.pack("<H", 0) + b"\0\0"
-        struct.pack_into("<IIHHIIIIIII", body, exp_at, 0, 0, 0, 0, sect_va + dll_name_at, 1, 1, 1,
+        body += b"".join(struct.pack("<H", i) for i in range(n)) + b"\0\0"
+        struct.pack_into("<IIHHIIIIIII", body, exp_at, 0, 0, 0, 0, sect_va + dll_name_at, 1, n, n,
                          sect_va + funcs_at, sect_va + names_at, sect_va + ords_at)
-        exp_rva, exp_size = sect_va + exp_at, ords_at + 4 - exp_at
+        exp_rva, exp_size = sect_va + exp_at, ords_at + 2 * n + 2 - exp_at
     if file_version is not None:
         rsrc_at = len(body)
         a, b_, c, d = file_version
@@ -79,8 +83,18 @@ def pe_file(export=None, block=b"", file_version=None, extra=b""):
 
 
 def sfse_plugin(**kw):
+    """An SFSE plugin; exports: more export names besides SFSEPlugin_Version (for example b"SFSEPlugin_Load")."""
     extra = kw.pop("extra", b"")
-    return pe_file(b"SFSEPlugin_Version", version_block(**kw), extra=extra)
+    names = [b"SFSEPlugin_Version"] + list(kw.pop("exports", ()))
+    return pe_file(names, version_block(**kw), extra=extra)
+
+
+# Made-up text that stands in for what each framework leaves in a DLL (the paths and names are invented).
+COMMONLIBSF_TEXT = (b"\0D:\\build\\commonlibsf\\src\\SFSE\\Made.cpp\0D:\\build\\commonlibsf\\src\\RE\\Up.cpp\0"
+                    b"lib\\commonlib-shared\\LICENSE\0.?AVAlpha@RE@@\0.?AUBeta@RE@@\0.?AVGamma@REL@@\0")
+PLAIN_SFSE_TEXT = b"\0F:\\x\\sfse\\sfse_common\\BranchTrampoline.cpp\0"
+CLSF_PDB_TEXT = (b"\0D:\\build\\commonlibsf\\include\\RE\\Made.h\0RE::Alpha\0RE::Beta\0RE::Gamma\0"
+                 b"RE::Delta\0")
 
 
 # ---- Starfield plugins -----------------------------------------------------------------------------------------

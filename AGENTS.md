@@ -7,7 +7,8 @@ Follow these steps in order. Every command here has been run on the release.
 Use sf-patch-day after a Starfield game update, or before installing an SFSE plugin download, to answer:
 
 - `dlls`: which SFSE plugin DLLs load on this game version, and what each waits for (SFSE, Address Library, its
-  author).
+  author). It also says which framework each plugin was built with (CommonLibSF, plain SFSE or can't tell) and
+  whether it shows signs of using Address Library.
 - `drift`: for a mod author, whether an update changed the records, quest stages or script functions their mod
   relies on in a master plugin (exit 2 = rebuild).
 
@@ -22,8 +23,8 @@ Don't use it to edit plugins, turn mods on or off, or download anything. It does
 ## 3. Install
 
 1. Download `sf-patch-day-<version>.zip` and its `.sha256` from https://github.com/taosecurity/sf-patch-day/releases.
-2. Check the hash: `certutil -hashfile sf-patch-day-0.2.2.zip SHA256` (Windows) or
-   `sha256sum sf-patch-day-0.2.2.zip` (Linux). It must match the `.sha256` file.
+2. Check the hash: `certutil -hashfile sf-patch-day-0.3.0.zip SHA256` (Windows) or
+   `sha256sum sf-patch-day-0.3.0.zip` (Linux). It must match the `.sha256` file.
 3. Unzip it. The folder holds `sf-patch-day.py`, `sf-patch-day.cmd` and `sf_patch_day\`.
 4. Optional: unzip sf-pex-tools 0.1.0 into a folder named `sf-pex-tools` next to the `sf-patch-day` folder.
 
@@ -36,7 +37,7 @@ python -I tests/test_sf_patch_day.py
 ```
 
 It must end with `OK` (some tests say `skipped` when sf-pex-tools isn't installed; that's fine). Then
-`python -I sf-patch-day.py --version` prints `sf-patch-day 0.2.2`.
+`python -I sf-patch-day.py --version` prints `sf-patch-day 0.3.0`.
 
 ## 5. Common tasks
 
@@ -47,6 +48,7 @@ Options go after the command name.
 |---|---|
 | Check installed SFSE plugins | `python -I sf-patch-day.py dlls` |
 | Check a download before installing it | `python -I sf-patch-day.py dlls "<path to the .zip>"` |
+| Check one DLL (verdict and framework) | `python -I sf-patch-day.py dlls "<path to the .dll>"` |
 | Judge against a version not installed yet | `python -I sf-patch-day.py dlls --game-version 1.16.250` |
 | Name the game folder | `python -I sf-patch-day.py dlls --game "<folder holding Starfield.exe>"` |
 | Check a Mod Organizer 2 mods folder | `python -I sf-patch-day.py dlls "%LOCALAPPDATA%\ModOrganizer\Starfield\mods"` |
@@ -84,7 +86,11 @@ is added.
   `RESULT:` line. With `--json` a finished run prints only its JSON report (`dlls --json` can do so with exit 3,
   naming unreadable files under `problems`); a run that stops before its report prints plain text (WARNING lines,
   then `RESULT: CANNOT CHECK`) on stdout, and a command-line mistake prints `RESULT: CANNOT CHECK` on stderr. Judge
-  a run by its exit code; try to parse stdout as JSON, and fall back to the text when that fails. `drift init` writes the mods file you
+  a run by its exit code; try to parse stdout as JSON, and fall back to the text when that fails. In the `dlls`
+  JSON, each SFSE plugin has `framework` (`"CommonLibSF"`, `"plain SFSE"` or `"can't tell"`), `framework_why`,
+  `framework_evidence`, `uses_address_library` and `address_library_evidence`, and the report has `frameworks`
+  (the three counts); README.md "Which framework a plugin uses" explains them. The framework never changes the
+  exit code. `drift init` writes the mods file you
   name; `drift snapshot` writes the baseline you name. Both refuse to overwrite without `--force` and refuse to
   write inside the game folder. Nothing else is written. Never rerun `snapshot --force` in place of `check` after
   an update: that replaces the baseline the check needs.
@@ -98,6 +104,8 @@ is added.
 - Read-only on the game folder. Never uploads anything; no network use at all.
 - Applies SFSE's loading rule only. A plugin that passes can still misbehave in game; "MAY FAIL" needs a test.
 - Doesn't judge DLLs without SFSE version data (ASI plugins, proxy DLLs).
+- The framework comes from text left in the DLL (and a same-name PDB beside it). A stripped or packed DLL, or a
+  plain-SFSE plugin with no SFSE source paths compiled in, gives "can't tell": report that as it is, never guess.
 - SFSE doesn't support the Game Pass version of Starfield; dlls says so on Game Pass installs.
 - drift sees only what the mods file lists. init reads the mod's scripts only with sf-pex-tools, and can't see
   quests or stage numbers worked out while the game runs, or calls made through another object's functions. A

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Richard Bejtlich
 """Reads the few things sf-patch-day needs from Windows program files (PE format), without running them:
 
-- a named export's file offset (SFSE plugins export a data block called SFSEPlugin_Version), and
+- a named export's file offset (SFSE plugins export a data block called SFSEPlugin_Version), the export names, and
 - the file version from the version resource (VS_FIXEDFILEINFO), for Starfield.exe and sfse_loader.exe.
 
 It reads headers, the export table and the resource section only. No code is read, run or kept.
@@ -83,6 +83,30 @@ class PE:
                     return None
                 return self.off(struct.unpack_from("<I", d, funcs_off + 4 * ordinal)[0])
         return None
+
+    def export_names(self):
+        """The set of names in the export table (bytes); empty when there is none. Damaged entries are skipped."""
+        if len(self.dirs) < 1 or not self.dirs[0][0]:
+            return set()
+        e = self.off(self.dirs[0][0])
+        if e is None:
+            return set()
+        d, out = self.data, set()
+        try:
+            n_names = struct.unpack_from("<I", d, e + 24)[0]
+            names_off = self.off(struct.unpack_from("<I", d, e + 32)[0])
+            if names_off is None:
+                return out
+            for i in range(min(n_names, 65536)):
+                name_off = self.off(struct.unpack_from("<I", d, names_off + 4 * i)[0])
+                if name_off is not None:
+                    try:
+                        out.add(self._cstr(name_off))
+                    except PEError:
+                        pass
+        except (struct.error, IndexError, ValueError):
+            pass
+        return out
 
     def file_version(self):
         """(major, minor, build, revision) from the version resource, or None. Looks for the VS_FIXEDFILEINFO

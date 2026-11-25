@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+### What's new
+
+sf-patch-day 0.3.0 says which framework each SFSE plugin was built with: CommonLibSF, plain SFSE (SFSE's own plugin API without CommonLibSF), or "can't tell". It also says whether the plugin shows signs of using Address Library. Each answer comes with the evidence that decided it. sf-patch-day reads the DLL's bytes for this, and a same-name PDB beside it when there is one. It never loads or runs the DLL, and it says "can't tell" rather than guess. The verdicts and exit codes haven't changed.
+
+### Example
+
+This is a real run on one installed plugin (the mod and author names changed):
+
+    > .\sf-patch-day.cmd dlls "C:\Program Files (x86)\Steam\steamapps\common\Starfield\Data\SFSE\Plugins\NewModB.dll"
+    sf-patch-day 0.3.0 dlls
+    Game version: 1.16.244 (read from C:\Program Files (x86)\Steam\steamapps\common\Starfield\Starfield.exe)
+    SFSE: 0.2.21 for this game version found (sfse_1_16_244.dll)
+    Address Library: versionlib-1-16-244-0.bin found (C:\Program Files (x86)\Steam\steamapps\common\Starfield\Data\SFSE\Plugins)
+
+    WORKS                  NewModB.dll
+        'NewModB' by AuthorB, plugin version 1.4.17; Address Library; 1.14.70+ structure layout
+        framework: CommonLibSF (11 CommonLibSF source paths, commonlib-shared, 17 RE type names); Address Library: yes (version data, versionlib file name, Address Library text)
+        why: lists 1.16.244
+
+    Frameworks: CommonLibSF 1, plain SFSE 0, can't tell 0
+    RESULT: everything checked loads (works: 1)
+
+On a Steam install with 15 SFSE plugins, the last lines read `Frameworks: CommonLibSF 3, plain SFSE 7, can't tell 5`.
+
+### Changes
+
+- `dlls` prints a `framework:` line for each SFSE plugin and a `Frameworks:` count before the `RESULT:` line. README.md, "Which framework a plugin uses", explains the signs it counts and the rule it applies.
+- `dlls --json` adds the keys `framework`, `framework_why`, `framework_evidence`, `uses_address_library` and `address_library_evidence` to each SFSE plugin, and `frameworks` to the report. No key was renamed or removed.
+- A PDB with the same name as the DLL, in the same folder or the same zip folder, is read too. A PDB bigger than 1 GB (512 MB inside a zip) is skipped.
+- The README shows how to check one DLL (`dlls <file.dll>`).
+- The README says that Vortex deploys mods into Data and Mod Organizer 2 never does.
+
 ## 0.2.2 (2026-11-23)
 
 ### What's new

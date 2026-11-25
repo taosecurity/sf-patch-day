@@ -14,7 +14,7 @@ import struct
 import zipfile
 import zlib
 
-from . import log, pe
+from . import framework, log, pe
 
 MAX_ZIP_MEMBER = 512 * 1024 * 1024  # a DLL bigger than this inside a zip is skipped (damaged or not a plugin)
 
@@ -51,10 +51,26 @@ def sfse_runtime_name(ver):
 
 # ---- finding the files ---------------------------------------------------------------------------------------
 class Item:
-    """One DLL to judge: a label for the report, and a way to get its bytes."""
+    """One DLL to judge: a label for the report, and a way to get its bytes. pdb: the PDB beside it (a path on disk,
+    or a member of the same zip), or None."""
 
-    def __init__(self, label, path, member=None):
-        self.label, self.path, self.member = label, path, member
+    def __init__(self, label, path, member=None, pdb=None):
+        self.label, self.path, self.member, self.pdb = label, path, member, pdb
+
+
+def _pdb_beside(full, names_here=None):
+    """<same stem>.pdb in the DLL's folder, or None. names_here: the folder's file names, when already listed."""
+    folder, base = os.path.split(full)
+    want = os.path.splitext(base)[0].lower() + ".pdb"
+    if names_here is None:
+        try:
+            names_here = os.listdir(folder or ".")
+        except OSError:
+            return None
+    for n in names_here:
+        if n.lower() == want and os.path.isfile(os.path.join(folder, n)):
+            return os.path.join(folder, n)
+    return None
 
 
 def collect(inputs):
@@ -64,12 +80,16 @@ def collect(inputs):
     def from_zip(zpath, label_base):
         try:
             with zipfile.ZipFile(zpath) as z:
-                for info in z.infolist():
+                infos = z.infolist()
+                pdbs = {i.filename.replace("\\", "/").lower(): i.filename for i in infos
+                        if i.filename.lower().endswith(".pdb") and not i.is_dir()}
+                for info in infos:
                     base = info.filename.replace("\\", "/").rsplit("/", 1)[-1]
                     if AL_RE.match(base):
                         al_files.setdefault(base.lower(), f"{zpath} :: {info.filename}")
                     if base.lower().endswith(".dll") and not info.is_dir():
-                        items.append(Item(f"{label_base} :: {info.filename}", zpath, info.filename))
+                        pdb = pdbs.get(info.filename.replace("\\", "/")[:-4].lower() + ".pdb")
+                        items.append(Item(f"{label_base} :: {info.filename}", zpath, info.filename, pdb))
             log.info("collect", f"read zip {zpath}")
         except (zipfile.BadZipFile, OSError, ValueError, struct.error, KeyError, RuntimeError, NotImplementedError,
                 EOFError, zlib.error) as e:  # a zip whose table zipfile can't make sense of
@@ -89,7 +109,7 @@ def collect(inputs):
                         al_files.setdefault(f.lower(), root)
                     low = f.lower()
                     if low.endswith(".dll"):
-                        items.append(Item(rel, full))
+                        items.append(Item(rel, full, pdb=_pdb_beside(full, files)))
                     elif low.endswith(".zip"):
                         from_zip(full, rel)
         elif os.path.isfile(path):
@@ -97,7 +117,7 @@ def collect(inputs):
             if low.endswith(".zip"):
                 from_zip(path, os.path.basename(path))
             elif low.endswith(".dll"):
-                items.append(Item(os.path.basename(path), path))
+                items.append(Item(os.path.basename(path), path, pdb=_pdb_beside(path)))
             else:
                 problems.append((path, "not a .dll, .zip or folder"))
         else:
@@ -117,6 +137,35 @@ def _with_bytes(item, fn):
         if info.file_size > MAX_ZIP_MEMBER:
             raise pe.PEError(f"{item.label}: {info.file_size // 1048576} MB, too big for a plugin DLL")
         return fn(z.read(info))
+
+
+MAX_PDB_FILE = 1024 * 1024 * 1024  # a PDB bigger than this on disk is skipped (in a zip, MAX_ZIP_MEMBER applies)
+
+
+def _pdb_counts(item):
+    """(label, framework counts) for the item's PDB, or (None, None) when there is none or it can't be read."""
+    if not item.pdb:
+        return None, None
+    label = item.pdb if item.member is None else f"{item.path} :: {item.pdb}"
+    try:
+        if item.member is None:
+            size = os.path.getsize(item.pdb)
+            if size == 0 or size > MAX_PDB_FILE:
+                log.info("framework", f"{label}: skipped ({size // 1048576} MB; the limit is 1024 MB)" if size
+                         else f"{label}: skipped (empty)")
+                return None, None
+            with open(item.pdb, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+                return label, framework.scan(m, is_pdb=True)
+        with zipfile.ZipFile(item.path) as z:
+            info = z.getinfo(item.pdb)
+            if info.file_size == 0 or info.file_size > MAX_ZIP_MEMBER:
+                log.info("framework", f"{label}: skipped ({info.file_size // 1048576} MB; the limit is 512 MB)")
+                return None, None
+            return label, framework.scan(z.read(info), is_pdb=True)
+    except (OSError, zipfile.BadZipFile, KeyError, ValueError, RuntimeError, NotImplementedError, EOFError,
+            zlib.error) as e:
+        log.info("framework", f"{label}: can't be read, so it isn't used ({e})")
+        return None, None
 
 
 # ---- the verdict -----------------------------------------------------------------------------------------------
@@ -177,10 +226,14 @@ def judge(item, target, al_present, sfse_version):
 
     def read(data):
         block = pe.sfse_block(data, item.label)
-        return block, pe.mentions_address_library(data)
+        if block is None:
+            return block, pe.mentions_address_library(data), None
+        counts = framework.scan(data)
+        uses_al, al_why = framework.address_library(data, block)
+        return block, "versionlib file name" in al_why, (counts, framework.exports(data, item.label), uses_al, al_why)
 
     try:
-        block, mentions = _with_bytes(item, read)
+        block, mentions, fw = _with_bytes(item, read)
     # zipfile can also raise RuntimeError (an encrypted member), NotImplementedError (Deflate64 and other methods),
     # EOFError and zlib.error (cut-off data). Any of these makes this one file unreadable, not the whole run.
     except (pe.PEError, OSError, zipfile.BadZipFile, KeyError, ValueError, RuntimeError, NotImplementedError,
@@ -201,6 +254,14 @@ def judge(item, target, al_present, sfse_version):
         log.info("dlls", f"{item.label}: {block['name']!r} address={block['address']} structure="
                          f"{block['structure']} compatible={out['compatible']} sfse>={out['sfse_required'] or '-'} "
                          f"-> {v}: {reason}")
+        counts, exported, uses_al, al_why = fw
+        pdb_label, pdb = _pdb_counts(item)
+        kind, why = framework.decide(counts, pdb)
+        out.update(framework=kind, framework_why=why,
+                   framework_evidence=dict(counts, exports=exported, pdb=pdb_label, pdb_counts=pdb),
+                   uses_address_library=uses_al, address_library_evidence=al_why)
+        log.info("framework", f"{item.label}: {counts} exports={exported} pdb={pdb_label} {pdb or ''} -> {kind} "
+                              f"({why}); Address Library {al_why or 'no signs'}")
     else:
         m = SFSE_RUNTIME_RE.match(item.label.replace("\\", "/").rsplit("/", 1)[-1])
         if m:
@@ -272,7 +333,8 @@ def run(inputs, target, game, game_pass=False, al_dirs=()):
     counts = {}
     for r in results:
         counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
-    return {"game_version": ".".join(map(str, target)), "game_folder": game, "game_pass": game_pass,
+    frameworks = {k: sum(1 for r in results if r.get("framework") == k) for k in framework.KINDS}
+    return {"frameworks": frameworks,"game_version": ".".join(map(str, target)), "game_folder": game, "game_pass": game_pass,
             "sfse": base, "address_library": {"file": al_name, "found": al_where}, "inputs": inputs,
             "problems": [{"path": p, "problem": m} for p, m in problems], "plugins": results, "counts": counts,
             "exit": worst}
@@ -311,12 +373,19 @@ def text_report(rep, how_version):
             if "name" in r:
                 lines.append(f"    {r['name']!r} by {r['author'] or 'unknown'}, plugin version {r['plugin_version']}; "
                              f"{r['how']}")
+            if "framework" in r:
+                al = (f"yes ({', '.join(r['address_library_evidence'])})" if r["uses_address_library"]
+                      else "no signs")
+                lines.append(f"    framework: {r['framework']} ({r['framework_why']}); Address Library: {al}")
             lines.append(f"    why: {r['reason']}")
             if v not in (WORKS, NOT_SFSE):
                 lines.append(f"    what to do: {r['what_to_do']}")
             if r.get("hint"):
                 lines.append(f"    hint: {r['hint']}")
     lines.append("")
+    fw = rep["frameworks"]
+    if any(fw.values()):
+        lines.append("Frameworks: " + ", ".join(f"{k} {fw[k]}" for k in framework.KINDS))
     c = rep["counts"]
     summary = ", ".join(f"{v.lower()}: {c[v]}" for v in ORDER if c.get(v)) or "no DLLs"
     word = {0: "everything checked loads", 1: "some plugins wait for an update or need testing",

@@ -42,9 +42,15 @@ def build_parser():
     ap.add_argument("--version", action="version", version=f"sf-patch-day {VERSION}")
     sub = ap.add_subparsers(dest="cmd", metavar="command", parser_class=Parser)
 
-    d = sub.add_parser("dlls", help="which SFSE plugin DLLs load on this game version")
+    d = sub.add_parser("dlls", help="which SFSE plugin DLLs load on this game version, and which framework each "
+                                    "was built with", description=(
+        "Which SFSE plugin DLLs load on this game version, and what each waits for. Each SFSE plugin also gets a "
+        "framework line: CommonLibSF, plain SFSE or can't tell, from text left in the DLL (and a same-name .pdb "
+        "beside it), with the evidence, and whether it shows signs of using Address Library. A stripped or packed "
+        "DLL gives can't tell. The framework never changes the exit code. DLLs are read, never loaded or run."))
     d.add_argument("paths", nargs="*", metavar="PATH",
-                   help="DLLs, zips or folders to check (default: the game's Data\\SFSE\\Plugins)")
+                   help="DLLs, zips or folders to check (default: the game's Data\\SFSE\\Plugins); "
+                        "one .dll checks just that plugin")
     d.add_argument("--game", metavar="FOLDER", help="the game folder holding Starfield.exe (default: found automatically)")
     d.add_argument("--game-version", metavar="X.Y.Z", help="judge against this game version instead of the "
                                                            "installed Starfield.exe's (for example 1.16.244)")

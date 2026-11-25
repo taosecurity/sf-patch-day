@@ -6,13 +6,15 @@ sf-patch-day runs on your own computer, offline. It collects no data and sends n
 
 - It makes no network connections.
 - It has no telemetry, analytics, crash reporting or update checks.
-- It starts no other programs. It never runs the DLLs it checks: it only reads their headers and version data.
+- It starts no other programs. It never loads or runs the DLLs it checks: it only reads their bytes (headers,
+  version data, export names, and the text it counts to name each plugin's framework).
 - It loads sf-pex-tools' Python files only when a mods file lists script functions, from the folder you name with
   `--pex-tools`, the `SF_PEX_TOOLS` environment variable, or a `sf-pex-tools` folder next to its own folder.
 
 ## What it reads
 
-- the DLLs, zips, folders, mods files and baselines you name on the command line;
+- the DLLs, zips, folders, mods files and baselines you name on the command line, and a PDB file with the same name
+  next to a DLL (in the same folder or the same zip folder), when there is one;
 - the game folder: `Starfield.exe`'s and SFSE's version data, the `Data\SFSE\Plugins` folder, and the master
   plugins and archives your mods file names;
 - to find the game when you don't give `--game` or `--data`: Steam's location from the Windows registry

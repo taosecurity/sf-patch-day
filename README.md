@@ -20,30 +20,36 @@ shortened):
 
 ```
 > .\sf-patch-day.cmd dlls
-sf-patch-day 0.2.2 dlls
+sf-patch-day 0.3.0 dlls
 Game version: 1.16.244 (read from C:\Program Files (x86)\Steam\steamapps\common\Starfield\Starfield.exe)
 SFSE: 0.2.21 for this game version found (sfse_1_16_244.dll)
 Address Library: versionlib-1-16-244-0.bin found (C:\Program Files (x86)\Steam\steamapps\common\Starfield\Data\SFSE\Plugins)
 
 MAY FAIL               NewModA.dll
     'NewModA' by AuthorA, plugin version 110; signature scans; no game structures
+    framework: can't tell (no CommonLibSF or SFSE source signs); Address Library: no signs
     why: version independent by signature scans
     what to do: SFSE loads it; it works only if the code it searches for is unchanged. Test it, or check its page
 WORKS                  NewModB.dll
     'NewModB' by AuthorB, plugin version 1.4.17; Address Library; 1.14.70+ structure layout
+    framework: CommonLibSF (11 CommonLibSF source paths, commonlib-shared, 17 RE type names); Address Library: yes (version data, versionlib file name, Address Library text)
     why: lists 1.16.244
 WORKS                  NewModC.dll
     'NewModC' by AuthorC, plugin version 21.7.0; fixed addresses; no structure promise
+    framework: plain SFSE (1 SFSE source path; no CommonLibSF signs); Address Library: no signs
     why: lists 1.16.244
 ...
 
+Frameworks: CommonLibSF 3, plain SFSE 7, can't tell 5
 RESULT: some plugins wait for an update or need testing (may fail: 3, works: 12)
 ```
 
 The first three lines are the base layer that every plugin needs: the game version, SFSE for that version, and the
 Address Library file for it. Then each plugin gets a verdict, a reason and, when there is something to do, what to
 do. Twelve plugins work, and three find the game's code by searching for it, so they need a quick test after an
-update. The last line sums it up, and the exit code (1 here) says the same thing to scripts.
+update. Each plugin's `framework` line says what it was built with (see
+[Which framework a plugin uses](#which-framework-a-plugin-uses)). The last line sums it up, and the exit code (1
+here) says the same thing to scripts.
 
 What it promises:
 
@@ -77,13 +83,13 @@ needs Python 3.9 or newer.
 1. Install Python 3.11 or newer from [python.org](https://www.python.org/downloads/). On the first screen of the
    installer, tick **Add python.exe to PATH**. To check that it worked, open a new Command Prompt and type
    `python --version`. It should print a version number.
-2. Download `sf-patch-day-0.2.2.zip` and its `.sha256` file from the
+2. Download `sf-patch-day-0.3.0.zip` and its `.sha256` file from the
    [releases page](https://github.com/taosecurity/sf-patch-day/releases) and unzip the zip anywhere. If you want
-   to check the download, run `certutil -hashfile sf-patch-day-0.2.2.zip SHA256` (on Linux,
-   `sha256sum sf-patch-day-0.2.2.zip`) and compare the result with the `.sha256` file.
+   to check the download, run `certutil -hashfile sf-patch-day-0.3.0.zip SHA256` (on Linux,
+   `sha256sum sf-patch-day-0.3.0.zip`) and compare the result with the `.sha256` file.
 3. Open the unzipped folder in File Explorer, click the address bar at the top, type `cmd` and press Enter. A
    Command Prompt window opens in that folder, ready for the commands in this README.
-4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.2.2`.
+4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.3.0`.
 
 `.\sf-patch-day.cmd` works in both Command Prompt and PowerShell. It only starts `python -I sf-patch-day.py` with the
 options you give it, so on Linux type `python3 -I sf-patch-day.py` instead. To check the install
@@ -124,6 +130,7 @@ install.
 ```
 .\sf-patch-day.cmd dlls                                  your installed plugins (the game's Data\SFSE\Plugins)
 .\sf-patch-day.cmd dlls "Downloads\SomePlugin-1.2.zip"   a download, before you install it
+.\sf-patch-day.cmd dlls "Downloads\SomePlugin.dll"       one DLL
 .\sf-patch-day.cmd dlls --game-version 1.16.250          judge your plugins against a version you don't have yet
 ```
 
@@ -155,21 +162,24 @@ author names changed, output shortened):
 
 ```
 > .\sf-patch-day.cmd dlls --game-version 1.16.250
-sf-patch-day 0.2.2 dlls
+sf-patch-day 0.3.0 dlls
 Game version: 1.16.250 (given with --game-version)
 SFSE: NOT FOUND for this game version (sfse_1_16_250.dll is missing). Every SFSE plugin waits for an SFSE update from its authors.
 Address Library: versionlib-1-16-250-0.bin NOT FOUND in the folders checked (plugins that use it wait for its update)
 
 LOCKED                 MyMod.dll
     'MyMod' by MyName, plugin version 2; Address Library; no structure promise
+    framework: can't tell (no CommonLibSF or SFSE source signs); Address Library: yes (version data, versionlib file name, Address Library text)
     why: lists only 1.16.244 (it uses Address Library but makes no structure promise, so SFSE treats it as locked)
     what to do: SFSE refuses it on this game version: turn it off until its author releases an update
 NEEDS ADDRESS LIBRARY  NewModB.dll
     'NewModB' by AuthorB, plugin version 1.4.17; Address Library; 1.14.70+ structure layout
+    framework: CommonLibSF (11 CommonLibSF source paths, commonlib-shared, 17 RE type names); Address Library: yes (version data, versionlib file name, Address Library text)
     why: uses Address Library; versionlib-1-16-250-0.bin was not found
     what to do: install the Address Library file for this game version when its author releases it
 ...
 
+Frameworks: CommonLibSF 3, plain SFSE 7, can't tell 5
 RESULT: some plugins are locked to other game versions (locked: 7, needs address library: 4, may fail: 4)
 ```
 
@@ -181,6 +191,50 @@ Options:
 - `--verbose`, `--log <file>`: write a troubleshooting log (see [Logs](#logs)).
 
 Paths can be DLLs, zips or folders. Folders are searched, including any zips inside them.
+
+### Which framework a plugin uses
+
+Most SFSE plugins are built in one of two ways: on **CommonLibSF**, a large C++ library for Starfield plugins, or on
+**plain SFSE**, the plugin API that comes with SFSE and nothing more. For each SFSE plugin, `dlls` reads the DLL's
+bytes (it never loads or runs the DLL) and prints a `framework` line:
+
+```
+    framework: CommonLibSF (11 CommonLibSF source paths, commonlib-shared, 17 RE type names); Address Library: yes (version data, versionlib file name, Address Library text)
+    framework: plain SFSE (1 SFSE source path; no CommonLibSF signs); Address Library: no signs
+    framework: can't tell (no CommonLibSF or SFSE source signs); Address Library: no signs
+```
+
+The brackets give the evidence that decided it:
+
+- **CommonLibSF** when the DLL holds at least one CommonLibSF source path (such as `commonlibsf\src\SFSE\...`), the
+  text `commonlib-shared` (CommonLibSF's shared part), or at least 3 names of CommonLibSF's game classes (its `RE`,
+  `REL` and `REX` namespaces).
+- **plain SFSE** when there is no CommonLibSF sign and the DLL holds at least one of SFSE's own source paths
+  (`sfse_common\...` or `sfse\sfse\...`).
+- **can't tell** otherwise. sf-patch-day doesn't guess.
+
+The word "CommonLibSF" on its own is not a sign, because other libraries name CommonLibSF's file formats too. If a
+PDB (the debug symbols file) with the same name sits next to the DLL, in the same folder or the same zip folder, it
+is read the same way and its counts are added: `(15 CommonLibSF source paths in the DLL, 624 in its PDB, ...)`.
+Many plugins ship without one, and a PDB bigger than 1 GB (512 MB inside a zip) is skipped.
+
+**Address Library** says `yes` when the version data says the plugin uses it, when the DLL names a `versionlib`
+file, or when it holds the text "Address Library". `no signs` means none of those were found, not that the plugin
+surely doesn't use it.
+
+The framework is information only: it doesn't change the verdict or the exit code. The last lines of the report
+count the plugins (`Frameworks: CommonLibSF 3, plain SFSE 7, can't tell 5`).
+
+With `--json`, each SFSE plugin also gets these keys (helper DLLs and unreadable files don't):
+
+- `framework`: `"CommonLibSF"`, `"plain SFSE"` or `"can't tell"`;
+- `framework_why`: the text in the brackets;
+- `framework_evidence`: `commonlibsf_paths`, `commonlib_shared`, `re_types` and `sfse_paths` (the DLL's counts),
+  `exports` (which of `SFSEPlugin_Load`, `SFSEPlugin_Version` and `SFSEPlugin_Preload` it exports), `pdb` (the
+  PDB read, or `null`) and `pdb_counts` (the PDB's four counts, or `null`);
+- `uses_address_library` (`true` or `false`) and `address_library_evidence` (the list in the brackets).
+
+The report also gets `frameworks`, the three counts.
 
 ## drift: does my mod need a rebuild
 
@@ -422,6 +476,9 @@ the run's exit code. Nothing is logged unless you ask. Include the log when you 
 - `dlls` applies SFSE's own loading rule. A plugin that passes it can still misbehave if the update changed the
   game code it patches, and only its author can say. "MAY FAIL" plugins need a test.
 - It doesn't judge DLLs without SFSE version data (ASI plugins, proxy DLLs).
+- The framework line reads text left in the DLL. A stripped, packed or obfuscated DLL gives "can't tell", and so
+  does a plain-SFSE plugin that compiled none of SFSE's source paths in. The counts are evidence, not a license or
+  build audit.
 - `drift` sees only what the mods file lists. `init` fills it from your overrides and, with sf-pex-tools, from your
   compiled scripts, but it can't see quests or stage numbers worked out while the game runs (see
   [What init finds in your scripts](#what-init-finds-in-your-scripts)).
