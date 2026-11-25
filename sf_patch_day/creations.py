@@ -48,6 +48,10 @@ def summary(cid, entry):
             "achievement_safe": entry.get("AchievementSafe")}
 
 
+def _no_constant(name):
+    raise ValueError(f"{name} isn't a number a catalog holds")
+
+
 def read(path, what, fix):
     """(raw bytes, header dict, {id: entry}) of a catalog file. Raises CreationsError naming the file and a fix."""
     try:
@@ -62,13 +66,15 @@ def read(path, what, fix):
     if len(raw) > MAX_BYTES:
         raise CreationsError(f"the {what} {path} is over 64 MB. Fix: {fix}")
     try:
-        data = json.loads(raw.decode("utf-8-sig"))
+        data = json.loads(raw.decode("utf-8-sig"), parse_constant=_no_constant)
     except UnicodeDecodeError:
         raise CreationsError(f"the {what} {path} isn't UTF-8 text. Fix: {fix}")
     except json.JSONDecodeError as e:
         raise CreationsError(f"the {what} {path} isn't valid JSON (line {e.lineno}: {e.msg}). Fix: {fix}")
     except RecursionError:
         raise CreationsError(f"the {what} {path} isn't a Creations catalog (nested too deeply). Fix: {fix}")
+    except ValueError as e:  # NaN or Infinity, or a number too long to read
+        raise CreationsError(f"the {what} {path} isn't a Creations catalog ({str(e).split(';')[0]}). Fix: {fix}")
     if not isinstance(data, dict):
         raise CreationsError(f"the {what} {path} isn't a Creations catalog (not a JSON object). Fix: {fix}")
     header = data.get(HEADER)
@@ -144,7 +150,9 @@ def _plain(v):
 
 def change_text(c):
     parts = []
-    if "version" in c:
+    if "version" in c and show_version(c["version"]["old"]) == show_version(c["version"]["new"]):
+        parts.append(f"re-uploaded (same version {show_version(c['version']['new']) or '(none)'})")
+    elif "version" in c:
         parts.append(f"version {show_version(c['version']['old']) or '(none)'} -> "
                      f"{show_version(c['version']['new']) or '(none)'}")
     if "title" in c:

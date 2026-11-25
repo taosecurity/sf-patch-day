@@ -1850,11 +1850,41 @@ class TestCreations(Temp):
 
     def test_saved_in_game_catalog_folder_refused(self):
         write(self.cat, mk.catalog(self.base()))
-        for saved in (self.p("game", "copy.txt"), self.cat, self.p("game", "sub", "copy.txt")):
+        for saved in (self.p("game", "copy.txt"), self.cat):
             code, out = run("creations", "--catalog", self.cat, "--saved", saved)
             self.assertEqual(code, 3, out)
             self.assertIn("in the folder that holds the game's catalog", out)
         self.assertEqual(sorted(os.listdir(self.p("game"))), ["ContentCatalog.txt"])
+
+    def test_default_saved_under_catalog_folder_allowed(self):
+        # a catalog copied to a folder above the default state folder (such as the home folder) still runs
+        from unittest import mock
+        write(self.p("ContentCatalog.txt"), mk.catalog(self.base()))
+        env = {"LOCALAPPDATA": self.p("local"), "XDG_STATE_HOME": self.p("local")}
+        with mock.patch.dict(os.environ, env):
+            code, out = run("creations", "--catalog", self.p("ContentCatalog.txt"))
+        self.assertEqual(code, 0, out)
+        self.assertTrue(os.path.isfile(self.p("local", "sf-patch-day", "ContentCatalog-saved.txt")))
+
+    def test_odd_numbers_refused(self):
+        # a 5000-digit number and NaN are refused as not a catalog, not an unexpected error or bad JSON output
+        for data in (b'{"ContentCatalog": {}, "TM_x": {"FilesSize": 1' + b"0" * 5000 + b"}}",
+                     b'{"ContentCatalog": {}, "TM_x": {"FilesSize": NaN}}'):
+            write(self.cat, data)
+            code, out = self.go()
+            self.assertEqual(code, 3, out)
+            self.assertIn("isn't a Creations catalog", out)
+            self.assertNotIn("unexpected error", out)
+            self.assertFalse(os.path.exists(self.saved))
+
+    def test_reupload_same_version_shown(self):
+        e = self.base()
+        self.first(e)
+        e[ID_B] = dict(e[ID_B], Version="1760000000.0.9.0")
+        write(self.cat, mk.catalog(e))
+        code, out = self.go()
+        self.assertEqual(code, 1, out)
+        self.assertIn("re-uploaded (same version 0.9.0)", out)
 
     def test_bom_and_missing_fields(self):
         write(self.cat, mk.catalog(self.base(), bom=True))

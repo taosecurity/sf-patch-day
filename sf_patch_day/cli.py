@@ -130,6 +130,13 @@ def inside(path, folder):
         return False
 
 
+def same_folder(path, other):
+    """True when path is other or sits right beside it (the same folder; subfolders don't count)."""
+    a = os.path.normcase(os.path.realpath(os.path.dirname(os.path.abspath(path))))
+    b = os.path.normcase(os.path.realpath(os.path.dirname(os.path.abspath(other))))
+    return a == b
+
+
 def data_dirs(args):
     """The folders to search for masters and archives: --plugin-dir ones first, then Data. (dirs, Data, game)."""
     data, game = args.data, None
@@ -328,8 +335,8 @@ def cmd_creations(args):
                     f"menu, or give --catalog <path to ContentCatalog.txt>.")
     saved = args.saved or paths.default_saved_catalog()
     log.info("creations", f"saved copy: {saved}" + ("" if args.saved else " (the default)"))
-    if inside(saved, os.path.dirname(os.path.abspath(catalog))):
-        return fail(f"--saved {saved} is in the folder that holds the game's catalog. sf-patch-day never writes "
+    if same_folder(saved, catalog):
+        return fail(f"{'--saved' if args.saved else 'The saved copy'} {saved} is in the folder that holds the game's catalog. sf-patch-day never writes "
                     f"there. Fix: give --saved a file in your own folder, or leave it out for the default.")
     game, _ = paths.find_game(None)
     if game and inside(saved, game):

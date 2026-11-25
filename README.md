@@ -454,7 +454,7 @@ RESULT: CHANGES: 1 added, 1 removed, 1 updated. Test these Creations before you 
 - **What counts as a change:** a Creation's version, title, files (compared without regard to upper or lower
   case), size, or whether it is achievement-friendly, and any field a later game version adds. The version is
   shown without the date number the game puts in front of it (`1757190740.1.0.0` shows as `1.0.0`); `--json` keeps
-  it whole. The `Timestamp` field is never compared, because the game rewrites it when a save loads. Those entries
+  it whole. When only that date number changed, the line says `re-uploaded (same version 1.0.0)`. The `Timestamp` field is never compared, because the game rewrites it when a save loads. Those entries
   are only counted, and `--verbose` lists their IDs.
 - **JSON:** `--json` prints `counts`, `added`, `removed`, `updated` (each with its `changes`), `result` and `exit`.
 - **Exit codes:** 0 no changes (or a first copy saved), 1 changes, 3 can't check (the catalog is missing or broken,
