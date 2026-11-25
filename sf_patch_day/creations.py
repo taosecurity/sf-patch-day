@@ -8,6 +8,7 @@ The game rewrites Timestamp when a save loads, so Timestamp is never compared. T
 """
 import datetime
 import json
+import math
 import os
 import re
 import tempfile
@@ -58,6 +59,21 @@ def _int(text):
     return int(text)
 
 
+def _float(text):
+    v = float(text)
+    if not math.isfinite(v):  # 1e999 reads as inf, which --json can't write as valid JSON
+        raise ValueError("a number too large to read")
+    return v
+
+
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def clean(text):
+    """A report line with control characters shown as \\xNN, so a title can't add lines or terminal codes."""
+    return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}", text)
+
+
 def read(path, what, fix):
     """(raw bytes, header dict, {id: entry}) of a catalog file. Raises CreationsError naming the file and a fix."""
     try:
@@ -72,7 +88,8 @@ def read(path, what, fix):
     if len(raw) > MAX_BYTES:
         raise CreationsError(f"the {what} {path} is over 64 MB. Fix: {fix}")
     try:
-        data = json.loads(raw.decode("utf-8-sig"), parse_constant=_no_constant, parse_int=_int)
+        data = json.loads(raw.decode("utf-8-sig"), parse_constant=_no_constant, parse_int=_int,
+                          parse_float=_float)
     except UnicodeDecodeError:
         raise CreationsError(f"the {what} {path} isn't UTF-8 text. Fix: {fix}")
     except json.JSONDecodeError as e:

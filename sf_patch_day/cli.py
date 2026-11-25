@@ -386,13 +386,13 @@ def cmd_creations(args):
     say(f"Compared with: {saved} (saved {when.strftime('%Y-%m-%d %H:%M') if when else 'at an unknown time'}, "
         f"{len(old)} Creations)")
     if ov != nv:
-        say(f"Catalog format version: {ov} -> {nv}")
+        say(creations.clean(f"Catalog format version: {ov} -> {nv}"))
     for e in rep["added"]:
-        say(f"ADDED   {creations.entry_text(e)}")
+        say(creations.clean(f"ADDED   {creations.entry_text(e)}"))
     for e in rep["removed"]:
-        say(f"REMOVED {creations.entry_text(e)}")
+        say(creations.clean(f"REMOVED {creations.entry_text(e)}"))
     for u in rep["updated"]:
-        say(f"UPDATED {u['title'] or '(no title)'} ({u['id']}): {creations.change_text(u['changes'])}")
+        say(creations.clean(f"UPDATED {u['title'] or '(no title)'} ({u['id']}): {creations.change_text(u['changes'])}"))
     say(f"Unchanged: {rep['unchanged']}. Timestamp-only changes (the game rewrites these when you load a save): "
         f"{rep['timestamp_only']}, not shown.")
     if n_changes:

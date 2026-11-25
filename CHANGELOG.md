@@ -27,6 +27,7 @@ On a real Steam catalog of 58 Creations, with one entry edited and one removed f
 - The saved copy changes only on the first run and with `--save`. A saved copy in the game folder or the catalog's folder is refused.
 - `Timestamp` is never compared, because the game rewrites it when a save loads.
 - Exit codes: 0 no changes or a first copy saved, 1 changes, 3 can't check.
+- A catalog with a number too long or too large to read (or NaN) is refused as not a catalog. Control characters in a Creation's title, files or other fields are shown as `\xNN` in the report, so a title can't add a line or send terminal codes.
 
 ## 0.3.0 (2026-11-24)
 

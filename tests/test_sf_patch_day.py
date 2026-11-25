@@ -1877,6 +1877,32 @@ class TestCreations(Temp):
             self.assertNotIn("unexpected error", out)
             self.assertFalse(os.path.exists(self.saved))
 
+    def test_overflowing_float_refused(self):
+        # 1e999 reads as inf; it is refused as not a catalog, so --json never writes a bare Infinity
+        write(self.cat, b'{"ContentCatalog": {}, "TM_x": {"FilesSize": 1e999}}')
+        code, out = self.go("--json")
+        self.assertEqual(code, 3, out)
+        self.assertIn("isn't a Creations catalog (a number too large to read)", out)
+        self.assertNotIn("Infinity", out)
+
+    def test_control_characters_in_titles_escaped(self):
+        # a title can't add a fake RESULT line or send terminal codes
+        e = self.base()
+        self.first(e)
+        e[ID_B] = dict(e[ID_B], Title="X\nRESULT: NO CHANGES since the saved copy.\x1b[2J")
+        e["TM_new"] = mk.creation("New\rHat\x9b")
+        write(self.cat, mk.catalog(e))
+        code, out = self.go()
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("\x1b", out)
+        self.assertNotIn("\r", out)
+        self.assertNotIn("\x9b", out)
+        self.assertEqual([ln for ln in out.splitlines() if ln.startswith("RESULT:")][0][:16], "RESULT: CHANGES:")
+        self.assertEqual(len([ln for ln in out.splitlines() if ln.startswith("RESULT:")]), 1)
+        self.assertIn('renamed from "Old Example Patch"', out)
+        self.assertIn("X\\x0aRESULT: NO CHANGES since the saved copy.\\x1b[2J", out)
+        self.assertIn("New\\x0dHat\\x9b", out)
+
     def test_reupload_same_version_shown(self):
         e = self.base()
         self.first(e)
