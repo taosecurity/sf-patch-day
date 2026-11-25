@@ -52,6 +52,12 @@ def _no_constant(name):
     raise ValueError(f"{name} isn't a number a catalog holds")
 
 
+def _int(text):
+    if len(text) > 4300:  # the limit newer Pythons set; older ones (3.9) have none
+        raise ValueError("a number too long to read")
+    return int(text)
+
+
 def read(path, what, fix):
     """(raw bytes, header dict, {id: entry}) of a catalog file. Raises CreationsError naming the file and a fix."""
     try:
@@ -66,7 +72,7 @@ def read(path, what, fix):
     if len(raw) > MAX_BYTES:
         raise CreationsError(f"the {what} {path} is over 64 MB. Fix: {fix}")
     try:
-        data = json.loads(raw.decode("utf-8-sig"), parse_constant=_no_constant)
+        data = json.loads(raw.decode("utf-8-sig"), parse_constant=_no_constant, parse_int=_int)
     except UnicodeDecodeError:
         raise CreationsError(f"the {what} {path} isn't UTF-8 text. Fix: {fix}")
     except json.JSONDecodeError as e:
