@@ -1820,7 +1820,10 @@ class TestCreations(Temp):
         self.assertFalse(os.path.exists(self.saved))
         for data, says in ((b"{not json", "isn't valid JSON"), (b"[1, 2]", "not a JSON object"),
                            (b'{"TM_x": {"Title": "A"}}', "no \"ContentCatalog\" header"),
-                           (b'{"ContentCatalog": {}, "TM_x": 5}', "isn't an object"), (b"\xff\xfe{", "UTF-8")):
+                           (b'{"ContentCatalog": {}, "TM_x": 5}', "isn't an object"), (b"\xff\xfe{", "UTF-8"),
+                           # nested too deeply for Python's JSON reader: a plain refusal, not "unexpected error"
+                           (b'{"ContentCatalog": {}, "TM_x": ' + b"[" * 100000 + b"]" * 100000 + b"}",
+                            "nested too deeply")):
             write(self.cat, data)
             code, out = self.go()
             self.assertEqual(code, 3, out)

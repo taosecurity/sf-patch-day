@@ -67,6 +67,8 @@ def read(path, what, fix):
         raise CreationsError(f"the {what} {path} isn't UTF-8 text. Fix: {fix}")
     except json.JSONDecodeError as e:
         raise CreationsError(f"the {what} {path} isn't valid JSON (line {e.lineno}: {e.msg}). Fix: {fix}")
+    except RecursionError:
+        raise CreationsError(f"the {what} {path} isn't a Creations catalog (nested too deeply). Fix: {fix}")
     if not isinstance(data, dict):
         raise CreationsError(f"the {what} {path} isn't a Creations catalog (not a JSON object). Fix: {fix}")
     header = data.get(HEADER)
