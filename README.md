@@ -215,7 +215,9 @@ The brackets give the evidence that decided it:
 
 The word "CommonLibSF" on its own is not a sign, because other libraries name CommonLibSF's file formats too. If a
 PDB (the debug symbols file) with the same name sits next to the DLL, in the same folder or the same zip folder, it
-is read the same way and its counts are added: `(15 CommonLibSF source paths in the DLL, 624 in its PDB, ...)`.
+is read the same way and its signs count too: `(15 CommonLibSF source paths in the DLL, 624 in its PDB, ...)`. The
+3-name test for game classes applies to the DLL and the PDB one at a time, because both files often name the same
+class.
 Many plugins ship without one, and a PDB bigger than 1 GB (512 MB inside a zip) is skipped.
 
 **Address Library** says `yes` when the version data says the plugin uses it, when the DLL names a `versionlib`

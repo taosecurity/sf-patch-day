@@ -86,12 +86,12 @@ def _piece(dll, pdb, one, many, has_pdb):
 
 
 def decide(dll, pdb=None):
-    """(framework, why) from the DLL's counts and, when there is one, its PDB's counts (added together)."""
+    """(framework, why) from the DLL's counts and, when there is one, its PDB's counts (RE names: the larger count)."""
     has_pdb = pdb is not None
     p = pdb or {"commonlibsf_paths": 0, "commonlib_shared": False, "re_types": 0, "sfse_paths": 0}
     paths = dll["commonlibsf_paths"] + p["commonlibsf_paths"]
     shared = dll["commonlib_shared"] or p["commonlib_shared"]
-    re_types = dll["re_types"] + p["re_types"]
+    re_types = max(dll["re_types"], p["re_types"])  # the same class can be named in both files: never add them
     sfse = dll["sfse_paths"] + p["sfse_paths"]
     paths_text = _piece(dll["commonlibsf_paths"], p["commonlibsf_paths"], "CommonLibSF source path",
                         "CommonLibSF source paths", has_pdb)

@@ -335,7 +335,8 @@ def run(inputs, target, game, game_pass=False, al_dirs=()):
     for r in results:
         counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
     frameworks = {k: sum(1 for r in results if r.get("framework") == k) for k in framework.KINDS}
-    return {"frameworks": frameworks,"game_version": ".".join(map(str, target)), "game_folder": game, "game_pass": game_pass,
+    return {"frameworks": frameworks, "game_version": ".".join(map(str, target)), "game_folder": game,
+            "game_pass": game_pass,
             "sfse": base, "address_library": {"file": al_name, "found": al_where}, "inputs": inputs,
             "problems": [{"path": p, "problem": m} for p, m in problems], "plugins": results, "counts": counts,
             "exit": worst}

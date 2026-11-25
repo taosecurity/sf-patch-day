@@ -323,6 +323,10 @@ class TestFramework(Temp):
         self.assertEqual(r["framework_evidence"]["pdb_counts"]["re_types"], 4)
         r = self.one("Mixed.dll", mk.sfse_plugin(extra=mk.COMMONLIBSF_TEXT), pdb=mk.CLSF_PDB_TEXT)
         self.assertIn("2 CommonLibSF source paths in the DLL, 1 in its PDB", r["framework_why"])
+        # The same class named in the DLL and its PDB is not counted twice: 2 and 1 stay below the threshold of 3.
+        r = self.one("Twice.dll", mk.sfse_plugin(extra=b"\0.?AVAlpha@RE@@\0.?AVBeta@RE@@\0"), pdb=b"\0RE::Alpha\0")
+        self.assertEqual((r["framework"], r["framework_why"]), ("can't tell", "2 RE type names in the DLL, 1 in its "
+                         "PDB, fewer than 3; no other CommonLibSF or SFSE source signs"))
         r = self.one("Empty.dll", mk.sfse_plugin(), pdb=b"")
         self.assertEqual(r["framework"], "can't tell")  # an empty PDB is skipped
         self.assertIsNone(r["framework_evidence"]["pdb"])
