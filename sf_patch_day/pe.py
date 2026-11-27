@@ -3,11 +3,17 @@
 """Reads the few things sf-patch-day needs from Windows program files (PE format), without running them:
 
 - a named export's file offset (SFSE plugins export a data block called SFSEPlugin_Version), the export names, and
-- the file version from the version resource (VS_FIXEDFILEINFO), for Starfield.exe and sfse_loader.exe.
+- the file version from the version resource (VS_FIXEDFILEINFO), for Starfield.exe and sfse_loader.exe, and
+- the names a DLL imports (the import and delay-load tables), for the risk evidence.
 
-It reads headers, the export table and the resource section only. No code is read, run or kept.
+It reads headers, the export and import tables and the resource section only. No code is read, run or kept.
 """
 import struct
+
+
+MAX_IMPORT_DLLS = 4096  # import descriptors read per directory
+MAX_THUNKS = 20000      # functions read per imported DLL
+MAX_IMPORT_NAME = 256   # bytes in a DLL or function name
 
 
 class PEError(Exception):
@@ -37,6 +43,8 @@ class PE:
         if magic not in (0x10B, 0x20B):
             raise PEError(f"{self.name}: unknown optional-header type {magic:#x}")
         self.is64 = magic == 0x20B
+        self.image_base = struct.unpack_from("<Q", d, opt + 24)[0] if self.is64 else \
+            struct.unpack_from("<I", d, opt + 28)[0]
         dd = opt + (112 if self.is64 else 96)
         n_dirs = struct.unpack_from("<I", d, dd - 4)[0]
         self.dirs = [struct.unpack_from("<II", d, dd + 8 * i) for i in range(min(n_dirs, 16))]
@@ -107,6 +115,77 @@ class PE:
         except (struct.error, IndexError, ValueError):
             pass
         return out
+
+    def _import_name(self, rva):
+        """The NUL-ended name at rva (bytes, 1 to MAX_IMPORT_NAME long), or None when it is outside the file,
+        empty or too long."""
+        o = self.off(rva) if rva >= 0 else None
+        if o is None:
+            return None
+        end = self.data.find(b"\0", o, o + MAX_IMPORT_NAME + 1)
+        if end <= o:
+            return None
+        return bytes(self.data[o:end])
+
+    def _thunks(self, rva, base=0):
+        """([function names, or '#n' for imports by ordinal], entries skipped) for one DLL's name table at rva.
+        base is subtracted from the name addresses (the old delay-load form stores addresses, not RVAs)."""
+        size = 8 if self.is64 else 4
+        fmt, by_ordinal = ("<Q", 1 << 63) if self.is64 else ("<I", 1 << 31)
+        names, skipped = [], 0
+        for i in range(MAX_THUNKS + 1):
+            o = self.off(rva + i * size)
+            if i == MAX_THUNKS or o is None or o + size > len(self.data):
+                return names, skipped + 1  # too many, or the table runs out of the file before its end mark
+            t = struct.unpack_from(fmt, self.data, o)[0]
+            if not t:
+                return names, skipped
+            if t & by_ordinal:
+                names.append(f"#{t & 0xFFFF}")
+                continue
+            name = self._import_name((t & 0x7FFFFFFF) - base + 2)  # 2: the hint before the name
+            if name is None:
+                skipped += 1
+            else:
+                names.append(name.decode("latin-1"))
+        return names, skipped
+
+    def imports(self):
+        """([(DLL name lowercased, [function names or '#n' ordinals], delay-loaded)], entries skipped) from the
+        import directory and the delay-load directory. A damaged entry is skipped and counted, never fatal. Limits:
+        MAX_IMPORT_DLLS descriptors per directory, MAX_THUNKS functions per DLL, names up to MAX_IMPORT_NAME bytes."""
+        out, skipped, d = [], 0, self.data
+        for index, delayed in ((1, False), (13, True)):
+            if len(self.dirs) <= index or not self.dirs[index][0]:
+                continue
+            rva, step = self.dirs[index][0], (32 if delayed else 20)
+            try:
+                for i in range(MAX_IMPORT_DLLS + 1):
+                    o = self.off(rva + i * step)
+                    if i == MAX_IMPORT_DLLS or o is None or o + step > len(d):
+                        skipped += 1
+                        break
+                    if delayed:
+                        attrs, name_rva, _handle, iat, int_rva = struct.unpack_from("<5I", d, o)
+                        if not any(struct.unpack_from("<8I", d, o)):
+                            break
+                        base = 0 if attrs & 1 else self.image_base  # bit 0 clear: the old form with addresses
+                        table = int_rva or iat
+                    else:
+                        oft, _stamp, _chain, name_rva, ft = struct.unpack_from("<5I", d, o)
+                        if not (oft or name_rva or ft):
+                            break
+                        base, table = 0, oft or ft
+                    name = self._import_name(name_rva - base)
+                    if name is None or not table:
+                        skipped += 1
+                        continue
+                    funcs, bad = self._thunks(table - base, base)
+                    skipped += bad
+                    out.append((name.decode("latin-1").lower(), funcs, delayed))
+            except (struct.error, IndexError, ValueError):
+                skipped += 1
+        return out, skipped
 
     def file_version(self):
         """(major, minor, build, revision) from the version resource, or None. Looks for the VS_FIXEDFILEINFO

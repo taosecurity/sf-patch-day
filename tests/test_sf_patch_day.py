@@ -24,6 +24,14 @@ sys.path.insert(0, HERE)
 
 import makers as mk  # noqa: E402
 from sf_patch_day import cli, creations, dlls, drift, paths, pe, pextools, scripts  # noqa: E402
+try:
+    from sf_patch_day import risk  # noqa: E402  (0.5.0)
+except ImportError:  # lets the 0.4.0 code run these tests and show them failing
+    risk = None
+try:
+    from sf_patch_day import hints  # noqa: E402  (0.5.0 step 3)
+except ImportError:  # lets the step 2 code run these tests and show them failing
+    hints = None
 from sf_patch_day.plugin import Plugin  # noqa: E402
 
 V244, V300 = mk.game_version(1, 16, 244), mk.game_version(1, 16, 300)
@@ -377,11 +385,312 @@ class TestFramework(Temp):
         self.assertIn("    framework: CommonLibSF (2 CommonLibSF source paths, commonlib-shared, 3 RE type names); "
                       "Address Library: no signs", out)
         self.assertIn("    framework: plain SFSE (1 SFSE source path; no CommonLibSF signs)", out)
-        self.assertIn("Frameworks: CommonLibSF 1, plain SFSE 1, can't tell 1\nRESULT:", out)
+        self.assertIn("Frameworks: CommonLibSF 1, plain SFSE 1, can't tell 1\nRisk evidence: ", out)
 
     def test_export_names(self):
         self.assertEqual(pe.PE(mk.pe_file([b"A", b"B"], b"x" * 8)).export_names(), {b"A", b"B"})
         self.assertEqual(pe.PE(mk.pe_file()).export_names(), set())
+
+
+# ---- the import and risk summary (every DLL and import list here is made up) ------------------------------------
+K32 = "KERNEL32.dll"
+
+
+class TestRisk(Temp):
+    def judge(self, name, data):
+        path = self.p("Plugins", name)
+        write(path, data)
+        return dlls.judge(dlls.Item(name, path), (1, 16, 300), True, None)
+
+    def line(self, data, name="Made.dll"):
+        return risk.text_line(self.judge(name, data)["risk"], None)
+
+    def test_pe_imports(self):
+        imports = [(K32, ["VirtualProtect", "GetProcAddress"], False), ("WS2_32.dll", [115, 116, 9999], False),
+                   ("winhttp.dll", ["WinHttpOpen"], True)]
+        want = ([("kernel32.dll", ["VirtualProtect", "GetProcAddress"], False),
+                 ("ws2_32.dll", ["#115", "#116", "#9999"], False), ("winhttp.dll", ["WinHttpOpen"], True)], 0)
+        self.assertEqual(pe.PE(mk.pe_file(imports=imports)).imports(), want)
+        self.assertEqual(pe.PE(mk.pe_file(imports=imports, bits=32)).imports(), want)  # PE32 too
+        self.assertEqual(pe.PE(mk.pe_file()).imports(), ([], 0))
+
+    def test_each_kind_text_and_json(self):
+        r = self.judge("All.dll", mk.sfse_plugin(compatible=[V300], imports=[
+            (K32, ["CreateProcessW", "LoadLibraryW", "GetProcAddress", "VirtualProtect", "FlushInstructionCache",
+                   "WriteProcessMemory", "GetModuleHandleW"], False),
+            ("ws2_32.dll", ["getaddrinfo", "WSAStartup", "connect", "send", "recv", "closesocket"], False)]))
+        self.assertEqual(risk.text_line(r["risk"]), (
+            "    risk evidence (not a verdict): network (ws2_32.dll: getaddrinfo, WSAStartup, connect, send, +2 more); "
+            "process launch (CreateProcessW); runtime DLL loading (LoadLibraryW, GetProcAddress); "
+            "code patching (VirtualProtect, FlushInstructionCache; other processes: WriteProcessMemory)"))
+        self.assertEqual(r["risk"]["process_launch"], {"imports": ["kernel32.dll!CreateProcessW"], "note": None})
+        self.assertEqual(r["risk"]["code_patching"]["other_process"], ["kernel32.dll!WriteProcessMemory"])
+        self.assertIsNone(r["risk"]["code_patching"]["note"])  # another process: not the common case
+        self.assertEqual(r["imports"], {"dlls": ["kernel32.dll", "ws2_32.dll"], "count": 13, "delayed": [],
+                                        "problem": None})
+
+    def test_ordinals_named(self):
+        line = self.line(mk.pe_file(imports=[("WS2_32.dll", [115, 116, 23, 9999], False)]))
+        self.assertIn("network (ws2_32.dll: WSAStartup, WSACleanup, socket, #9999)", line)
+        line = self.line(mk.pe_file(imports=[("WSOCK32.dll", [112], False), ("winhttp.dll", [7], False)]))
+        self.assertIn("network (wsock32.dll: WSASetLastError; winhttp.dll: #7)", line)  # winhttp ordinals: numbers
+
+    def test_common_notes(self):
+        self.assertEqual(self.line(mk.pe_file(imports=[(K32, ["VirtualProtect", "FlushInstructionCache",
+                                                               "LoadLibraryExW", "GetProcAddress"], False)])),
+                         "    risk evidence (not a verdict): runtime DLL loading (LoadLibraryExW, GetProcAddress) "
+                         "[the C runtime imports these itself]; code patching (VirtualProtect, FlushInstructionCache) "
+                         "[most SFSE plugins have this (SFSE's hooks need it)]")
+        self.assertEqual(self.line(mk.pe_file(imports=[("SHELL32.dll", ["ShellExecuteW"], False)])),
+                         "    risk evidence (not a verdict): process launch (ShellExecuteW) "
+                         "[also opens web pages and folders]")
+        # LoadLibraryW is not what the C runtime brings: no note.
+        self.assertIn("runtime DLL loading (LoadLibraryW, GetProcAddress); ",
+                      self.line(mk.pe_file(imports=[(K32, ["LoadLibraryW", "GetProcAddress", "VirtualProtect"],
+                                                     False)])))
+        # Patching-library text takes the note away too.
+        self.assertIn("code patching (VirtualProtect; text: Xbyak, MinHook)",
+                      self.line(mk.pe_file(imports=[(K32, ["VirtualProtect"], False)],
+                                           extra=b"\0.?AVCodeGenerator@Xbyak@@\0MH_ERROR_NOT_INITIALIZED\0")))
+
+    def test_api_set_dll_and_delay_load(self):
+        r = self.judge("Api.dll", mk.pe_file(imports=[
+            ("api-ms-win-core-processthreads-l1-1-0.dll", ["CreateProcessW"], False),
+            ("WINHTTP.dll", ["WinHttpOpen", "WinHttpSendRequest"], True)]))
+        self.assertEqual(r["risk"]["process_launch"]["imports"],
+                         ["api-ms-win-core-processthreads-l1-1-0.dll!CreateProcessW"])
+        self.assertEqual(r["risk"]["network"]["imports"], ["winhttp.dll!WinHttpOpen", "winhttp.dll!WinHttpSendRequest"])
+        self.assertEqual(r["imports"]["delayed"], ["winhttp.dll"])
+
+    def test_nothing_found(self):
+        self.assertEqual(self.line(mk.pe_file(imports=[(K32, ["GetModuleHandleW", "CloseHandle"], False)])),
+                         "    risk evidence (not a verdict): none of the four kinds in its imports")
+        self.assertEqual(self.line(mk.sfse_plugin()), "    risk evidence (not a verdict): none of the four kinds in "
+                                                      "its imports")
+
+    def test_damaged_descriptor(self):
+        r = self.judge("Bad.dll", mk.sfse_plugin(compatible=[V300], imports=[
+            (mk.BAD_IMPORT, [], False), (K32, ["CreateProcessW"], False)]))
+        self.assertEqual(r["verdict"], dlls.WORKS)
+        self.assertEqual(r["imports"]["problem"], "1 entry skipped")
+        self.assertEqual(r["imports"]["dlls"], ["kernel32.dll"])  # the next entry is still read
+        self.assertEqual(risk.text_line(r["risk"], r["imports"]["problem"]),
+                         "    risk evidence (not a verdict): process launch (CreateProcessW) "
+                         "(import table partly unreadable: 1 entry skipped)")
+
+    def test_only_our_own_strings(self):
+        evil = "evil\x1b[2J\nRESULT: fake"
+        r = self.judge("Odd.dll", mk.pe_file(imports=[("bad\x01name.dll", [evil, "CreateProcessW"], False),
+                                                       ("ws2_32.dll", [evil, "send"], False),
+                                                       ("wsock32.dll", [evil], False)]))
+        self.assertEqual(r["imports"]["dlls"], ["bad\\x01name.dll", "ws2_32.dll", "wsock32.dll"])
+        self.assertEqual(r["risk"]["process_launch"]["imports"], ["bad\\x01name.dll!CreateProcessW"])
+        line = risk.text_line(r["risk"])
+        self.assertEqual(line, "    risk evidence (not a verdict): network (ws2_32.dll: send, +1 more; "
+                               "wsock32.dll: 1 function); process launch (CreateProcessW)")
+        self.assertEqual(r["risk"]["network"]["unlisted"], {"ws2_32.dll": 1, "wsock32.dll": 1})
+
+    def test_report_text_json_summary_and_log(self):
+        folder = self.p("Plugins")
+        write(os.path.join(folder, "Net.dll"), mk.sfse_plugin(compatible=[V300], imports=[
+            ("ws2_32.dll", [115], True), (K32, ["VirtualProtect"], False)]))
+        write(os.path.join(folder, "Quiet.dll"), mk.sfse_plugin(compatible=[V300], imports=[
+            (K32, ["VirtualProtect"], False)]))
+        write(os.path.join(folder, "Helper.dll"), mk.pe_file(imports=[("SHELL32.dll", ["ShellExecuteW"], False)]))
+        write(os.path.join(folder, "Broken.dll"), b"MZ" + b"\xff" * 100)
+        logf = self.p("run.log")
+        code, out = run("dlls", "--game-version", "1.16.300", folder, "--log", logf)
+        self.assertEqual(code, 3)  # Broken.dll, as before
+        self.assertIn("NOT AN SFSE PLUGIN     Helper.dll\n    risk evidence (not a verdict): process launch "
+                      "(ShellExecuteW) [also opens web pages and folders]\n    why:", out)  # a helper DLL gets it too
+        self.assertIn("    framework: can't tell (no CommonLibSF or SFSE source signs); Address Library: no signs\n"
+                      "    framework hints: none (a stripped or packed DLL leaves none)\n"
+                      "    risk evidence (not a verdict): network (ws2_32.dll: WSAStartup); code patching "
+                      "(VirtualProtect) [most SFSE plugins have this (SFSE's hooks need it)]\n    why:", out)
+        self.assertIn("Frameworks: CommonLibSF 0, plain SFSE 0, can't tell 2\nRisk evidence: network 1, process launch "
+                      "1, runtime DLL loading 0, code patching 2 (of 3 DLLs read)\nRESULT:", out)
+        broken = out[out.index("Broken.dll"):].split("\n")[1]
+        self.assertTrue(broken.startswith("    why:"), broken)  # unreadable: no risk line
+        with open(logf, encoding="utf-8") as f:
+            self.assertIn("[risk] Net.dll: 2 import DLL entries, 2 functions, 0 skipped; kinds: network, "
+                          "code_patching", f.read())
+        code, out = run("dlls", "--json", "--game-version", "1.16.300", folder)
+        rep = json.loads(out)
+        self.assertEqual(rep["risk_counts"], {"network": 1, "process_launch": 1, "dll_loading": 0,
+                                              "code_patching": 2})
+        self.assertEqual(rep["risk_dlls_read"], 3)
+        broken = next(r for r in rep["plugins"] if r["file"] == "Broken.dll")
+        self.assertNotIn("risk", broken)
+
+    def test_verdict_and_exit_unchanged(self):
+        loud = [(K32, ["CreateProcessW", "WriteProcessMemory", "LoadLibraryW"], False), ("ws2_32.dll", [23], True)]
+        for n, kw in enumerate(({"compatible": [V244]}, {"address": 1, "structure": 1}, {"compatible": [V300]})):
+            outs = []
+            for imports in ((), loud):
+                folder = self.p(f"V{n}-{len(outs)}")
+                write(os.path.join(folder, "X.dll"), mk.sfse_plugin(imports=imports, **kw))
+                code, out = run("dlls", "--json", "--game-version", "1.16.300", folder)
+                r = json.loads(out)["plugins"][0]
+                outs.append((code, r["verdict"], r["reason"]))
+            self.assertEqual(outs[0], outs[1], kw)
+
+
+# ---- signature-scan evidence (every pattern, word and type name here is made up) ----------------------------------
+NO_SIGNS_HOW = "says signature scans, but no pattern-scan signs found"
+NO_SIGNS_WHY = ("version independent by its version data's signature-scan claim, but no pattern-scan signs were "
+                "found: it may use fixed addresses and refuse to load or crash on this version")
+
+
+class TestScanEvidence(Temp):
+    def judge(self, name, **kw):
+        path = self.p("Plugins", name)
+        write(path, mk.sfse_plugin(**kw))
+        return dlls.judge(dlls.Item(name, path), (1, 16, 300), True, None)
+
+    def test_evidence_found(self):
+        r = self.judge("Wild.dll", address=1, structure=1, extra=b"\x0048 8B 05 ?? ?? ?? ?? E8\0")
+        self.assertEqual(r["signature_scan_evidence"], ["1 pattern string"])
+        self.assertEqual(r["how"], "signature scans; no game structures")
+        self.assertEqual((r["verdict"], r["reason"]), (dlls.MAY_FAIL, "version independent by signature scans"))
+        # Two tokens with a letter A-F are enough without a wildcard; scanner words and type names count too.
+        r = self.judge("Hex.dll", address=1, structure=1, extra=b"\x0040 53 48 83 EC 20 8B D9\0Made FindPattern\0"
+                       b".?AVMemoryScanner@made@@\0.?AVPatternHit@made@@\0")
+        self.assertEqual(r["signature_scan_evidence"], ["1 pattern string", "scanner text: findpattern",
+                                                        "2 Pattern/Scanner type names"])
+        self.assertEqual(r["how"], "signature scans; no game structures")
+        r = self.judge("Words.dll", address=1, structure=1, extra=b"\0made SIGNATURE NOT FOUND, aob scan\0")
+        self.assertEqual(r["signature_scan_evidence"], ["scanner text: aob scan, signature not found"])
+        r = self.judge("Said.dll", address=1, structure=1, extra=b"\0Made sig not found\0Failed to resolve signature "
+                                                                  b"at {}\0")
+        self.assertEqual(r["signature_scan_evidence"], ["scanner text: sig not found, resolve signature"])
+
+    def test_no_evidence(self):
+        # Digit-only number tables, a single letter token, five tokens, bare AOB/AoB, an unbounded pattern, other
+        # kinds of signature (a web header, a shader's root signature), the game's hand scanner and spdlog's
+        # pattern_formatter are not signs of a pattern scanner.
+        extra = (b"\x0010 20 30 40 50 60 70\0" b"11 22 33 44 55 6A\0" b"?? ?? ?? ?? ??\0AOB\0AoB\0"
+                 b"x48 8B ?? ?? ?? ?? E8\0Signature-Input\0bad root signature\0Open the scanner\0"
+                 b".?AVScannerMenu@made@@\0.?AVpattern_formatter@spdlog@@\0")
+        r = self.judge("Claim.dll", address=1, structure=1, extra=extra)
+        self.assertEqual(r["signature_scan_evidence"], [])
+        self.assertEqual(r["how"], NO_SIGNS_HOW + "; no game structures")
+        self.assertEqual((r["verdict"], r["reason"]), (dlls.MAY_FAIL, NO_SIGNS_WHY))
+        # With Address Library too, the claim is still called unbacked, and the verdict is Address Library's.
+        r = self.judge("Both.dll", address=5, structure=8)
+        self.assertEqual(r["how"], "Address Library, " + NO_SIGNS_HOW + "; 1.14.70+ structure layout")
+        self.assertEqual(r["verdict"], dlls.WORKS)
+
+    def test_other_flags_unchanged(self):
+        for address, how in ((0, "fixed addresses"), (4, "Address Library")):
+            r = self.judge(f"F{address}.dll", address=address, structure=8, compatible=[V300],
+                           extra=b"\x0048 8B ?? ?? ?? ?? E8\0")
+            self.assertIsNone(r["signature_scan_evidence"])  # not looked for
+            self.assertEqual(r["how"], how + "; 1.14.70+ structure layout")
+        write(self.p("H.dll"), mk.pe_file(extra=b"\x0048 8B ?? ?? ?? ?? E8\0"))
+        helper = dlls.judge(dlls.Item("H.dll", self.p("H.dll")), (1, 16, 300), True, None)
+        self.assertNotIn("signature_scan_evidence", helper)  # not an SFSE plugin: no version data to check
+        # verdict() without evidence (as other callers use it) keeps the old reason.
+        block = pe.sfse_block(mk.sfse_plugin(address=1, structure=1))
+        self.assertEqual(dlls.verdict(block, (1, 16, 300), True), (dlls.MAY_FAIL, "version independent by signature "
+                                                                                   "scans"))
+
+    def test_report_log_verdict_and_exit(self):
+        folder = self.p("Plugins")
+        write(os.path.join(folder, "Claim.dll"), mk.sfse_plugin(name="Claim", address=1, structure=1))
+        logf = self.p("run.log")
+        code, out = run("dlls", "--game-version", "1.16.300", folder, "--log", logf)
+        self.assertEqual(code, 1)  # MAY FAIL, as before
+        self.assertIn(f"    'Claim' by Test Author, plugin version 1; {NO_SIGNS_HOW}; no game structures\n", out)
+        self.assertIn(f"    why: {NO_SIGNS_WHY}\n", out)
+        with open(logf, encoding="utf-8") as f:
+            self.assertIn("[hints] Claim.dll: version data says signature scans; pattern-scan signs: none", f.read())
+        write(os.path.join(folder, "Claim.dll"), mk.sfse_plugin(name="Claim", address=1, structure=1,
+                                                                extra=b"\0sigscan\0"))
+        code2, out2 = run("dlls", "--json", "--game-version", "1.16.300", folder)
+        self.assertEqual(code2, code)
+        r = json.loads(out2)["plugins"][0]
+        self.assertEqual((r["verdict"], r["signature_scan_evidence"]), (dlls.MAY_FAIL, ["scanner text: sigscan"]))
+
+
+# ---- framework hints for DLLs that can't be placed (all made up) ----------------------------------------------------
+HINT_TEXT = (b"\0.?AVlogger@spdlog@@\0.?AVformat_error@v10@fmt@@\0.?AVtable@v3@toml@@\0.?AVmade@mylib@@\0"
+             b".?AVITaskDelegate@SFSETaskInterface@@\0.?AUSFSEMadeUpInterface@@\0"
+             b"Made Address Library file is for another game version: \0"
+             b"Only game version 9.9.9 runs this made-up plugin\0")
+HINT_LINE = ('    framework hints: libraries spdlog, fmt, toml (CommonLibSF plugins use spdlog and fmt, but so do '
+             'others); SFSE plugin API types (SFSETaskInterface); its own Address Library reader text: "Made Address '
+             'Library file is for another game version: "; its own game version check text: "Only game version '
+             '9.9.9 runs this made-up plugin"')
+
+
+class TestFrameworkHints(Temp):
+    judge, one = TestFramework.judge, TestFramework.one
+
+    def test_each_part(self):
+        r = self.one("Hints.dll", mk.sfse_plugin(compatible=[V300], extra=HINT_TEXT))
+        self.assertEqual(r["framework"], "can't tell")
+        self.assertEqual(r["framework_hints"], {
+            "libraries": ["spdlog", "fmt", "toml"], "sfse_api_types": ["SFSETaskInterface"],
+            "address_library_text": ["Made Address Library file is for another game version: "],
+            "version_check_text": ["Only game version 9.9.9 runs this made-up plugin"]})
+        self.assertEqual(hints.hints_line(r["framework_hints"]), HINT_LINE)
+        # Without spdlog or fmt there is no note; parts with nothing are left out.
+        r = self.one("Boost.dll", mk.sfse_plugin(extra=b"\0.?AVerror@json@boost@@\0"))
+        self.assertEqual(hints.hints_line(r["framework_hints"]), "    framework hints: libraries boost")
+
+    def test_quotes_escaped_cut_and_capped(self):
+        long = b"Only game version 1 is supported, " + b"x" * 100
+        extra = (b"\0Address Library \x1b[2J\"wrong\" file\0" + long + b"\0versionlib two\0addresslib three\0"
+                 b"versionlib two\0")
+        r = self.one("Odd.dll", mk.sfse_plugin(extra=extra))
+        h = r["framework_hints"]
+        self.assertEqual(h["address_library_text"], ["Address Library \\x1b[2J\\x22wrong\\x22 file", "versionlib two"])
+        self.assertEqual(h["version_check_text"], [long[:80].decode("ascii") + "..."])
+        line = hints.hints_line(h)
+        self.assertNotIn("\x1b", line)
+        self.assertNotIn("addresslib three", line)  # up to 2 quotes each
+        # A word past the cut moves the cut so the word stays in view.
+        far = "class made::Thing<" + "x" * 150 + ">::ReadAddressLibrary(void) " + "y" * 60
+        r = self.one("Far.dll", mk.sfse_plugin(extra=b"\0" + far.encode("ascii") + b"\0"))
+        q = r["framework_hints"]["address_library_text"][0]
+        self.assertTrue(q.startswith("...") and q.endswith("...") and "AddressLibrary" in q, q)
+        self.assertEqual(len(q), 86)
+
+    def test_only_for_cant_tell(self):
+        for name, extra, pdb in (("Clsf.dll", mk.COMMONLIBSF_TEXT, None), ("Plain.dll", mk.PLAIN_SFSE_TEXT, None),
+                                 ("Sym.dll", b"", mk.CLSF_PDB_TEXT)):  # the PDB places it: no hints
+            r = self.one(name, mk.sfse_plugin(extra=extra + HINT_TEXT), pdb=pdb)
+            self.assertNotEqual(r["framework"], "can't tell", name)
+            self.assertNotIn("framework_hints", r, name)
+        folder = self.p("Plugins")
+        write(os.path.join(folder, "Helper.dll"), mk.pe_file(extra=HINT_TEXT))
+        code, out = run("dlls", "--game-version", "1.16.300", folder)
+        self.assertEqual(out.count("framework hints:"), 0, out)  # CommonLibSF, plain SFSE and a helper DLL
+
+    def test_none_found(self):
+        r = self.one("Bare.dll", mk.sfse_plugin())
+        self.assertEqual(r["framework_hints"], {"libraries": [], "sfse_api_types": [], "address_library_text": [],
+                                                "version_check_text": []})
+        self.assertEqual(hints.hints_line(r["framework_hints"]),
+                         "    framework hints: none (a stripped or packed DLL leaves none)")
+
+    def test_report_counts_log_and_exit(self):
+        folder = self.p("Plugins")
+        write(os.path.join(folder, "Clsf.dll"), mk.sfse_plugin(compatible=[V300], extra=mk.COMMONLIBSF_TEXT))
+        write(os.path.join(folder, "Hints.dll"), mk.sfse_plugin(compatible=[V300], extra=HINT_TEXT))
+        write(os.path.join(folder, "Bare.dll"), mk.sfse_plugin(compatible=[V300]))
+        logf = self.p("run.log")
+        code, out = run("dlls", "--game-version", "1.16.300", folder, "--log", logf)
+        self.assertEqual(code, 0)  # hints are evidence, not a verdict
+        self.assertIn("Address Library: yes (Address Library text)\n" + HINT_LINE + "\n    risk evidence", out)
+        self.assertIn("Frameworks: CommonLibSF 1, plain SFSE 0, can't tell 2\n", out)  # the counts don't change
+        with open(logf, encoding="utf-8") as f:
+            self.assertIn("[hints] Hints.dll: 6 type names; libraries ['spdlog', 'fmt', 'toml']; SFSE API types "
+                          "['SFSETaskInterface'] (1 other SFSE type names); 1 Address Library reader and 1 game "
+                          "version check messages", f.read())
+        rep = json.loads(run("dlls", "--json", "--game-version", "1.16.300", folder)[1])
+        self.assertEqual(rep["frameworks"], {"CommonLibSF": 1, "plain SFSE": 0, "can't tell": 2})
+        self.assertEqual({r["file"] for r in rep["plugins"] if "framework_hints" in r}, {"Hints.dll", "Bare.dll"})
 
 
 # ---- drift ------------------------------------------------------------------------------------------------------

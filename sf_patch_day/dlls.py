@@ -14,7 +14,7 @@ import struct
 import zipfile
 import zlib
 
-from . import framework, log, pe
+from . import framework, hints, log, pe, risk
 
 MAX_ZIP_MEMBER = 512 * 1024 * 1024  # a DLL bigger than this inside a zip is skipped (damaged or not a plugin)
 
@@ -170,7 +170,14 @@ def _pdb_counts(item):
 
 
 # ---- the verdict -----------------------------------------------------------------------------------------------
-def describe_flags(block):
+NO_SCAN_SIGNS = "says signature scans, but no pattern-scan signs found"
+MAY_FAIL_NO_SIGNS = ("version independent by its version data's signature-scan claim, but no pattern-scan signs "
+                     "were found: it may use fixed addresses and refuse to load or crash on this version")
+
+
+def describe_flags(block, scan_signs=None):
+    """How the plugin finds the game's code and which layout it promises. scan_signs: the signature-scan evidence
+    (hints.signature_scan_evidence), [] when none was found, or None when it wasn't looked for."""
     a, s = block["address"], block["structure"]
     how = []
     if a & pe.ADDR_LIB2:
@@ -178,7 +185,7 @@ def describe_flags(block):
     if a & pe.ADDR_LIB:
         how.append("old Address Library format")
     if a & pe.ADDR_SIG:
-        how.append("signature scans")
+        how.append(NO_SCAN_SIGNS if scan_signs == [] else "signature scans")
     if not how:
         how.append("fixed addresses")
     lay = []
@@ -191,10 +198,11 @@ def describe_flags(block):
     return ", ".join(how) + "; " + ", ".join(lay)
 
 
-def verdict(block, target, al_present, sfse_version=None):
+def verdict(block, target, al_present, sfse_version=None, scan_signs=None):
     """(verdict, reason) for one plugin's version block on game version `target` (major, minor, build).
     al_present: True/False whether the Address Library file for `target` was found. sfse_version: SFSE's version
-    packed like the block's fields, or None when unknown."""
+    packed like the block's fields, or None when unknown. scan_signs (as in describe_flags) changes only the
+    wording of a MAY FAIL reason, never the verdict: SFSE goes by the version data alone."""
     if block is None:
         return NOT_SFSE, "no SFSEPlugin_Version export"
     if block["data_version"] != 1:
@@ -218,7 +226,7 @@ def verdict(block, target, al_present, sfse_version=None):
         return WORKS, f"lists {pe.version_text(pe.pack_version(*target))}"
     if uses_al:
         return WORKS, "version independent; the Address Library file for this version is present"
-    return MAY_FAIL, "version independent by signature scans"
+    return MAY_FAIL, MAY_FAIL_NO_SIGNS if scan_signs == [] else "version independent by signature scans"
 
 
 def judge(item, target, al_present, sfse_version):
@@ -227,14 +235,24 @@ def judge(item, target, al_present, sfse_version):
 
     def read(data):
         block = pe.sfse_block(data, item.label)
+        evidence = risk.read(data, item.label)  # every readable DLL: a bundled helper can be the one that matters
         if block is None:
-            return block, pe.mentions_address_library(data), None
+            return block, pe.mentions_address_library(data), None, evidence, None, None
         counts = framework.scan(data)
         uses_al, al_why = framework.address_library(data, block)
-        return block, "versionlib file name" in al_why, (counts, framework.exports(data, item.label), uses_al, al_why)
+        # The deeper looks share one pass over the type names. Hints are read when the DLL alone can't be placed
+        # (a PDB can only add signs, so it can't make a placed DLL unplaced); they're kept only if the PDB doesn't
+        # place it either.
+        want_scan = bool(block["address"] & pe.ADDR_SIG)
+        want_hints = framework.decide(counts)[0] == framework.CANT_TELL
+        types = hints.type_names(data) if want_scan or want_hints else None
+        scan_signs = hints.signature_scan_evidence(data, types) if want_scan else None
+        found_hints = hints.framework_hints(data, types) if want_hints else None
+        return (block, "versionlib file name" in al_why,
+                (counts, framework.exports(data, item.label), uses_al, al_why), evidence, scan_signs, found_hints)
 
     try:
-        block, mentions, fw = _with_bytes(item, read)
+        block, mentions, fw, (imports, found), scan_signs, found_hints = _with_bytes(item, read)
     # zipfile can also raise RuntimeError (an encrypted member), NotImplementedError (Deflate64 and other methods),
     # EOFError and zlib.error (cut-off data). Any of these makes this one file unreadable, not the whole run.
     except (pe.PEError, OSError, zipfile.BadZipFile, KeyError, ValueError, RuntimeError, NotImplementedError,
@@ -242,14 +260,18 @@ def judge(item, target, al_present, sfse_version):
         out.update(verdict=UNREADABLE, reason=str(e), what_to_do=WHAT_TO_DO[UNREADABLE])
         log.info("dlls", f"{item.label}: unreadable: {e}")
         return out
-    v, reason = verdict(block, target, al_present, sfse_version)
-    out.update(verdict=v, reason=reason, what_to_do=WHAT_TO_DO[v])
+    v, reason = verdict(block, target, al_present, sfse_version, scan_signs)
+    out.update(verdict=v, reason=reason, what_to_do=WHAT_TO_DO[v], imports=imports, risk=found)
     if block is not None:
         out.update(name=block["name"], author=block["author"],
                    plugin_version=pe.plugin_version_text(block["plugin_version"]),
                    compatible=[pe.version_text(c) for c in block["compatible"]],
                    sfse_required=pe.version_text(block["sfse_required"]),
-                   address_flags=block["address"], structure_flags=block["structure"], how=describe_flags(block))
+                   address_flags=block["address"], structure_flags=block["structure"],
+                   how=describe_flags(block, scan_signs), signature_scan_evidence=scan_signs)
+        if scan_signs is not None:
+            log.info("hints", f"{item.label}: version data says signature scans; pattern-scan signs: "
+                              f"{', '.join(scan_signs) or 'none'}")
         if mentions and not block["address"] & (pe.ADDR_LIB | pe.ADDR_LIB2):
             out["hint"] = "its code names an Address Library file, though its version data doesn't say it uses one"
         log.info("dlls", f"{item.label}: {block['name']!r} address={block['address']} structure="
@@ -263,6 +285,14 @@ def judge(item, target, al_present, sfse_version):
                    uses_address_library=uses_al, address_library_evidence=al_why)
         log.info("framework", f"{item.label}: {counts} exports={exported} pdb={pdb_label} {pdb or ''} -> {kind} "
                               f"({why}); Address Library {al_why or 'no signs'}")
+        if kind == framework.CANT_TELL and found_hints is not None:
+            c = found_hints.pop("counts")
+            out["framework_hints"] = found_hints
+            log.info("hints", f"{item.label}: {c['type_names']} type names; libraries "
+                              f"{found_hints['libraries'] or 'none'}; SFSE API types "
+                              f"{found_hints['sfse_api_types'] or 'none'} ({c['other_sfse_types']} other SFSE "
+                              f"type names); {c['reader_messages']} Address Library reader and "
+                              f"{c['check_messages']} game version check messages")
     else:
         m = SFSE_RUNTIME_RE.match(item.label.replace("\\", "/").rsplit("/", 1)[-1])
         if m:
@@ -335,7 +365,10 @@ def run(inputs, target, game, game_pass=False, al_dirs=()):
     for r in results:
         counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
     frameworks = {k: sum(1 for r in results if r.get("framework") == k) for k in framework.KINDS}
-    return {"frameworks": frameworks, "game_version": ".".join(map(str, target)), "game_folder": game,
+    read = [r for r in results if "risk" in r]
+    risk_counts = {k: sum(1 for r in read if k in risk.found_kinds(r["risk"])) for k in risk.KINDS}
+    return {"frameworks": frameworks, "risk_counts": risk_counts, "risk_dlls_read": len(read),
+            "game_version": ".".join(map(str, target)), "game_folder": game,
             "game_pass": game_pass,
             "sfse": base, "address_library": {"file": al_name, "found": al_where}, "inputs": inputs,
             "problems": [{"path": p, "problem": m} for p, m in problems], "plugins": results, "counts": counts,
@@ -379,6 +412,10 @@ def text_report(rep, how_version):
                 al = (f"yes ({', '.join(r['address_library_evidence'])})" if r["uses_address_library"]
                       else "no signs")
                 lines.append(f"    framework: {r['framework']} ({r['framework_why']}); Address Library: {al}")
+            if "framework_hints" in r:
+                lines.append(hints.hints_line(r["framework_hints"]))
+            if "risk" in r:
+                lines.append(risk.text_line(r["risk"], r["imports"]["problem"]))
             lines.append(f"    why: {r['reason']}")
             if v not in (WORKS, NOT_SFSE):
                 lines.append(f"    what to do: {r['what_to_do']}")
@@ -388,6 +425,8 @@ def text_report(rep, how_version):
     fw = rep["frameworks"]
     if any(fw.values()):
         lines.append("Frameworks: " + ", ".join(f"{k} {fw[k]}" for k in framework.KINDS))
+    if rep["risk_dlls_read"]:
+        lines.append(risk.summary_line(rep["risk_counts"], rep["risk_dlls_read"]))
     c = rep["counts"]
     summary = ", ".join(f"{v.lower()}: {c[v]}" for v in ORDER if c.get(v)) or "no DLLs"
     word = {0: "everything checked loads", 1: "some plugins wait for an update or need testing",

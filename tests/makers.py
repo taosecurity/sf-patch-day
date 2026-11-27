@@ -26,12 +26,68 @@ def game_version(major, minor, build):
     return (major & 0xFF) << 24 | (minor & 0xFF) << 16 | (build & 0xFFF) << 4
 
 
-def pe_file(export=None, block=b"", file_version=None, extra=b""):
-    """A minimal 64-bit PE: one section holding an export table (export name, or a list of names, each -> block)
-    and/or a VS_FIXEDFILEINFO, plus `extra` bytes (for example a string)."""
+BAD_IMPORT = None  # an imports entry with this DLL name gets a descriptor whose addresses lie outside the file
+
+
+def _import_tables(body, sect_va, imports, bits):
+    """Writes made-up import and delay-load tables into body (a bytearray). imports: [(DLL name, [function names
+    (str) or ordinals (int)], delay-loaded)]. Returns ((import rva, size), (delay-load rva, size))."""
+    size, by_ordinal = (8, 1 << 63) if bits == 64 else (4, 1 << 31)
+    fmt = "<Q" if bits == 64 else "<I"
+
+    def align():
+        while len(body) % 8:
+            body.append(0)
+
+    tables = []
+    for dll, funcs, delayed in imports:
+        if dll is BAD_IMPORT:
+            tables.append((0x7FFF0000, 0x7FFF0000, 0x7FFF0000, delayed))
+            continue
+        name_at = len(body)
+        body.extend(dll.encode("latin-1") + b"\0")
+        values = []
+        for f in funcs:
+            if isinstance(f, int):
+                values.append(by_ordinal | f)
+            else:
+                align()
+                values.append(sect_va + len(body))
+                body.extend(b"\0\0" + f.encode("latin-1") + b"\0")  # the hint, then the name
+        align()
+        int_at = len(body)
+        body.extend(b"".join(struct.pack(fmt, v) for v in values) + bytes(size))
+        iat_at = len(body)
+        body.extend(b"".join(struct.pack(fmt, v) for v in values) + bytes(size))
+        tables.append((sect_va + name_at, sect_va + int_at, sect_va + iat_at, delayed))
+    align()
+    handle_at = len(body)
+    body.extend(bytes(8))
+    imp_at = len(body)
+    for name, int_rva, iat_rva, delayed in tables:
+        if not delayed:
+            body.extend(struct.pack("<5I", int_rva, 0, 0, name, iat_rva))
+    body.extend(bytes(20))
+    imp = (sect_va + imp_at, len(body) - imp_at)
+    delay_at = len(body)
+    for name, int_rva, iat_rva, delayed in tables:
+        if delayed:
+            body.extend(struct.pack("<8I", 1, name, sect_va + handle_at, iat_rva, int_rva, 0, 0, 0))
+    body.extend(bytes(32))
+    delay = (sect_va + delay_at, len(body) - delay_at) if any(t[3] for t in tables) else (0, 0)
+    return imp, delay
+
+
+def pe_file(export=None, block=b"", file_version=None, extra=b"", imports=(), bits=64):
+    """A minimal PE (64-bit, or 32-bit with bits=32): one section holding an export table (export name, or a list
+    of names, each -> block) and/or a VS_FIXEDFILEINFO, import tables (see _import_tables), plus `extra` bytes (for
+    example a string)."""
     sect_va, sect_raw = 0x1000, 0x400
     body = bytearray()
     exp_rva = exp_size = rsrc_rva = rsrc_size = 0
+    imp, delay = (0, 0), (0, 0)
+    if imports:
+        imp, delay = _import_tables(body, sect_va, imports, bits)
     if export is not None:
         names = [export] if isinstance(export, bytes) else list(export)
         n = len(names)
@@ -70,13 +126,16 @@ def pe_file(export=None, block=b"", file_version=None, extra=b""):
     head[0:2] = b"MZ"
     struct.pack_into("<I", head, 0x3C, 0x40)
     head[0x40:0x44] = b"PE\0\0"
-    struct.pack_into("<HHIIIHH", head, 0x44, 0x8664, 1, 0, 0, 0, 240, 0x2022)
+    machine, opt_size, magic, dd = (0x8664, 240, 0x20B, 112) if bits == 64 else (0x14C, 224, 0x10B, 96)
+    struct.pack_into("<HHIIIHH", head, 0x44, machine, 1, 0, 0, 0, opt_size, 0x2022)
     opt = 0x58
-    struct.pack_into("<H", head, opt, 0x20B)
-    struct.pack_into("<I", head, opt + 108, 16)
-    struct.pack_into("<II", head, opt + 112, exp_rva, exp_size)
-    struct.pack_into("<II", head, opt + 112 + 16, rsrc_rva, rsrc_size)
-    sh = opt + 240
+    struct.pack_into("<H", head, opt, magic)
+    struct.pack_into("<I", head, opt + dd - 4, 16)
+    struct.pack_into("<II", head, opt + dd, exp_rva, exp_size)
+    struct.pack_into("<II", head, opt + dd + 8, *imp)
+    struct.pack_into("<II", head, opt + dd + 16, rsrc_rva, rsrc_size)
+    struct.pack_into("<II", head, opt + dd + 8 * 13, *delay)
+    sh = opt + opt_size
     head[sh:sh + 8] = b".rdata\0\0"
     struct.pack_into("<IIII", head, sh + 8, len(body), sect_va, len(body), sect_raw)
     return bytes(head) + bytes(body)
@@ -84,9 +143,9 @@ def pe_file(export=None, block=b"", file_version=None, extra=b""):
 
 def sfse_plugin(**kw):
     """An SFSE plugin; exports: more export names besides SFSEPlugin_Version (for example b"SFSEPlugin_Load")."""
-    extra = kw.pop("extra", b"")
+    extra, imports = kw.pop("extra", b""), kw.pop("imports", ())
     names = [b"SFSEPlugin_Version"] + list(kw.pop("exports", ()))
-    return pe_file(names, version_block(**kw), extra=extra)
+    return pe_file(names, version_block(**kw), extra=extra, imports=imports)
 
 
 # Made-up text that stands in for what each framework leaves in a DLL (the paths and names are invented).

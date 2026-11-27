@@ -240,6 +240,49 @@ With `--json`, each SFSE plugin also gets these keys (helper DLLs and unreadable
 
 The report also gets `frameworks`, the three counts.
 
+### What else `dlls` prints about each DLL
+
+Three more lines help you judge a plugin by hand. None of them changes a verdict or the exit code.
+
+**Risk evidence.** Every DLL `dlls` can read gets a line that lists which Windows functions it imports from four
+groups: network (anything imported from a networking DLL such as `ws2_32.dll` or `winhttp.dll`), process launch
+(`CreateProcessW`, `ShellExecuteW` and the like), runtime DLL loading (`LoadLibraryW` with `GetProcAddress`) and code
+patching (`VirtualProtect`, `WriteProcessMemory` and the like):
+
+```
+    risk evidence (not a verdict): network (ws2_32.dll: WSAStartup, getaddrinfo, connect); process launch (CreateProcessW); runtime DLL loading (GetProcAddress) [the C runtime imports these itself]; code patching (VirtualProtect, FlushInstructionCache) [most SFSE plugins have this (SFSE's hooks need it)]
+    risk evidence (not a verdict): none of the four kinds in its imports
+```
+
+An import shows what a DLL **can** call, not what it does. Nearly every SFSE plugin patches code, because SFSE's hooks
+need `VirtualProtect`, so those names carry a note instead of looking like a warning. Programs built with the static
+C runtime also import `LoadLibraryExW` and `GetProcAddress` for themselves, and `ShellExecute` also opens web pages
+and folders. Only function names from sf-patch-day's own table are printed. The report ends with a summary line such
+as `Risk evidence: network 1, process launch 1, runtime DLL loading 3, code patching 3 (of 3 DLLs read)`. A damaged
+import table is noted and skipped, never fatal.
+
+**Signature scans, only with evidence.** A DLL's version data can claim that it finds the game's code by signature
+scanning. `dlls` now looks for signs of a scanner in the DLL: byte-pattern text with `??` wildcards, scanner words such
+as "find pattern", or a scanner class name. With signs the plugin reads `signature scans`. Without them it reads
+`says signature scans, but no pattern-scan signs found`, and a plugin that SFSE treats as version independent gets the
+MAY FAIL reason "version independent by its version data's signature-scan claim, but no pattern-scan signs were found:
+it may use fixed addresses and refuse to load or crash on this version". "No pattern-scan signs" means no text signs were
+found. It is not proof: a scanner that stores its patterns as byte arrays leaves none. The verdict is still SFSE's
+rule and is not changed.
+
+**Framework hints.** For a DLL whose framework is "can't tell", a `framework hints` line lists what could still place
+it: well-known libraries named in its type information (`spdlog`, `fmt`, `toml`, `DKUtil` and a few more), SFSE's own
+plugin API types (`SFSETaskInterface` and the other four), and quoted text from its own Address Library reader or game
+version check (cut to 80 characters, with unusual characters shown as `\xNN`). A library name is a hint, not proof of
+a framework: other plugins use `spdlog` and `fmt` too. The `Frameworks:` counts stay as they are. With nothing found,
+the line reads `framework hints: none (a stripped or packed DLL leaves none)`.
+
+With `--json`, each readable DLL also gets `imports` (`dlls`, `count`, `delayed`, `problem`) and `risk` (`network`,
+`process_launch`, `dll_loading` and `code_patching`, each with its `imports` and `note`); each SFSE plugin gets
+`signature_scan_evidence` (`null` unless its version data claims signature scans, `[]` when it does but nothing was
+found); a "can't tell" plugin also gets `framework_hints`. The report gets `risk_counts` (the four counts) and
+`risk_dlls_read`.
+
 ## drift: does my mod need a rebuild
 
 This part is for mod authors whose mod builds on records in another plugin: Starfield.esm, a DLC such as Shattered
@@ -524,6 +567,8 @@ the run's exit code. Nothing is logged unless you ask. Include the log when you 
 - `dlls` applies SFSE's own loading rule. A plugin that passes it can still misbehave if the update changed the
   game code it patches, and only its author can say. "MAY FAIL" plugins need a test.
 - It doesn't judge DLLs without SFSE version data (ASI plugins, proxy DLLs).
+- Risk evidence lists imports: it shows what a DLL can call, not what it does, and a DLL can load code at run time without importing anything unusual.
+- "No pattern-scan signs" means no text signs were found, not proof: a scanner that stores its patterns as byte arrays leaves none.
 - The framework line reads text left in the DLL. A stripped, packed or obfuscated DLL gives "can't tell", and so
   does a plain-SFSE plugin that compiled none of SFSE's source paths in. The counts are evidence, not a license or
   build audit.

@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.5.0 (unreleased)
+
+### What's new
+
+sf-patch-day 0.5.0 makes `dlls` say more about each SFSE plugin DLL, so you can judge one without a separate strings scan. Each DLL it can read gets a "risk evidence" line that lists which network, process-launch, runtime-DLL-loading and code-patching functions it imports (evidence, not a verdict: an import shows what a DLL can call, not what it does). A plugin whose version data claims signature scans now reads "signature scans" only when the DLL shows signs of a pattern scanner; otherwise it reads "says signature scans, but no pattern-scan signs found" (no signs is not proof, because a scanner can keep its patterns as byte arrays). A plugin whose framework is "can't tell" gets a "framework hints" line with the libraries and SFSE types it names and its own Address Library and game version text. Verdicts and exit codes don't change.
+
+### Example
+
+This run uses three made-up DLLs (every name in it is made up):
+
+    > .\sf-patch-day.cmd dlls C:\Example\Plugins --game-version 1.16.244
+    WORKS                  ExampleClaim.dll
+        'ExampleClaim' by AuthorA, plugin version 2; says signature scans, but no pattern-scan signs found; no structure promise
+        framework: can't tell (no CommonLibSF or SFSE source signs); Address Library: no signs
+        framework hints: none (a stripped or packed DLL leaves none)
+        risk evidence (not a verdict): runtime DLL loading (GetProcAddress) [the C runtime imports these itself]; code patching (VirtualProtect, FlushInstructionCache) [most SFSE plugins have this (SFSE's hooks need it)]
+        why: lists 1.16.244
+    WORKS                  ExampleHooks.dll
+        'ExampleHooks' by AuthorC, plugin version 1; fixed addresses; no structure promise
+        framework: can't tell (no CommonLibSF or SFSE source signs); Address Library: no signs
+        framework hints: libraries spdlog (CommonLibSF plugins use spdlog and fmt, but so do others); SFSE plugin API types (SFSETaskInterface); its own game version check text: "Only game version 1.16.244 is supported"
+        risk evidence (not a verdict): runtime DLL loading (GetProcAddress) [the C runtime imports these itself]; code patching (VirtualProtect, FlushInstructionCache) [most SFSE plugins have this (SFSE's hooks need it)]
+        why: lists 1.16.244
+    WORKS                  ExampleScanner.dll
+        'ExampleScanner' by AuthorB, plugin version 3; signature scans; no structure promise
+        framework: can't tell (no CommonLibSF or SFSE source signs); Address Library: no signs
+        framework hints: none (a stripped or packed DLL leaves none)
+        risk evidence (not a verdict): network (ws2_32.dll: WSAStartup, getaddrinfo, connect); process launch (CreateProcessW); runtime DLL loading (GetProcAddress) [the C runtime imports these itself]; code patching (VirtualProtect, FlushInstructionCache) [most SFSE plugins have this (SFSE's hooks need it)]
+        why: lists 1.16.244
+
+    Frameworks: CommonLibSF 0, plain SFSE 0, can't tell 3
+    Risk evidence: network 1, process launch 1, runtime DLL loading 3, code patching 3 (of 3 DLLs read)
+    RESULT: everything checked loads (works: 3)
+
+On a real run over 41 DLLs (the 15 plugins in a Steam install's SFSE folder plus 26 DLLs from other mods), 7 DLLs read "says signature scans, but no pattern-scan signs found", and the summary read `Risk evidence: network 7, process launch 7, runtime DLL loading 32, code patching 29 (of 41 DLLs read)`.
+
+### Changes
+
+- `dlls` prints a risk evidence line for each readable DLL and a `Risk evidence:` summary line; JSON `imports`, `risk`, `risk_counts` and `risk_dlls_read`.
+- `dlls` prints "signature scans" only with signs of a pattern scanner, and otherwise "says signature scans, but no pattern-scan signs found" (the MAY FAIL reason is reworded); JSON `signature_scan_evidence`.
+- `dlls` prints a `framework hints` line for "can't tell" plugins; JSON `framework_hints`.
+- README.md "What else `dlls` prints about each DLL" explains all three.
+
 ## 0.4.0 (2026-11-25)
 
 ### What's new

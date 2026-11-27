@@ -8,7 +8,10 @@ Use sf-patch-day after a Starfield game update, or before installing an SFSE plu
 
 - `dlls`: which SFSE plugin DLLs load on this game version, and what each waits for (SFSE, Address Library, its
   author). It also says which framework each plugin was built with (CommonLibSF, plain SFSE or can't tell) and
-  whether it shows signs of using Address Library.
+  whether it shows signs of using Address Library. Each readable DLL also gets a "risk evidence" line (network,
+  process launch, runtime DLL loading and code patching imports), "signature scans" is printed only with signs of
+  a pattern scanner (else "says signature scans, but no pattern-scan signs found"), and a "can't tell" plugin gets
+  a "framework hints" line.
 - `drift`: for a mod author, whether an update changed the records, quest stages or script functions their mod
   relies on in a master plugin (exit 2 = rebuild).
 - `creations`: which Creations were added, removed or updated (version, title, files, size, achievement-friendly)
@@ -97,7 +100,11 @@ is added.
   JSON, each SFSE plugin has `framework` (`"CommonLibSF"`, `"plain SFSE"` or `"can't tell"`), `framework_why`,
   `framework_evidence`, `uses_address_library` and `address_library_evidence`, and the report has `frameworks`
   (the three counts); README.md "Which framework a plugin uses" explains them. The framework never changes the
-  exit code. `drift init` writes the mods file you
+  exit code. Also in the `dlls` JSON: per DLL `imports` and `risk`; per SFSE plugin `signature_scan_evidence`
+  (`null` unless its version data says signature scans) and, for "can't tell" only, `framework_hints`; in the report
+  `risk_counts` and `risk_dlls_read`. Risk evidence, the scan wording and the hints never change a verdict or exit
+  code. An import shows what a DLL can call, not what it does, and "no pattern-scan signs" means no text signs were
+  found, not proof: a scanner that keeps its patterns as byte arrays leaves none. `drift init` writes the mods file you
   name; `drift snapshot` writes the baseline you name. Both refuse to overwrite without `--force` and refuse to
   write inside the game folder. `creations` writes only its saved copy: on the first run, and with `--save` (a
   temporary file, then a replace); it refuses a saved copy in the game folder or the catalog's folder. Its JSON has
@@ -118,6 +125,7 @@ is added.
   the Creations' own files.
 - Applies SFSE's loading rule only. A plugin that passes can still misbehave in game; "MAY FAIL" needs a test.
 - Doesn't judge DLLs without SFSE version data (ASI plugins, proxy DLLs).
+- Risk evidence is imports only (what a DLL can call), and "no pattern-scan signs" is not proof of fixed addresses.
 - The framework comes from text left in the DLL (and a same-name PDB beside it). A stripped or packed DLL, or a
   plain-SFSE plugin with no SFSE source paths compiled in, gives "can't tell": report that as it is, never guess.
 - SFSE doesn't support the Game Pass version of Starfield; dlls says so on Game Pass installs.

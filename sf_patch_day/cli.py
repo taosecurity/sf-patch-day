@@ -47,7 +47,10 @@ def build_parser():
         "Which SFSE plugin DLLs load on this game version, and what each waits for. Each SFSE plugin also gets a "
         "framework line: CommonLibSF, plain SFSE or can't tell, from text left in the DLL (and a same-name .pdb "
         "beside it), with the evidence, and whether it shows signs of using Address Library. A stripped or packed "
-        "DLL gives can't tell. The framework never changes the exit code. DLLs are read, never loaded or run."))
+        "DLL gives can't tell, and gets a framework hints line. Each readable DLL also gets a risk evidence line "
+        "(network, process launch, runtime DLL loading and code patching imports). \"signature scans\" is printed "
+        "only when the DLL shows signs of a pattern scanner. None of this changes a verdict or the exit code. "
+        "DLLs are read, never loaded or run."))
     d.add_argument("paths", nargs="*", metavar="PATH",
                    help="DLLs, zips or folders to check (default: the game's Data\\SFSE\\Plugins); "
                         "one .dll checks just that plugin")
