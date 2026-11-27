@@ -266,10 +266,11 @@ def cmd_drift(args):
         for m, s in mods["masters"].items():
             staged = sum(1 for r in s["records"] if r.get("stages"))
             nf = sum(len(v) for v in s.get("functions", {}).values())
-            say(f"  {m}: {len(s['records'])} record(s)" + (f", {staged} with quest stages" if staged else "")
-                + (f", {nf} function(s) in {len(s['functions'])} script(s) from {s['ba2']}" if nf else ""))
+            # Master names from the plugin header and archive names from the mods file: escaped.
+            say(log.show(f"  {m}: {len(s['records'])} record(s)" + (f", {staged} with quest stages" if staged else "")
+                         + (f", {nf} function(s) in {len(s['functions'])} script(s) from {s['ba2']}" if nf else "")))
         for note in notes:
-            say(f"note: {note}")
+            say(log.show(f"note: {note}"))  # master and script names, error text
         say_warnings()
         if mods["masters"] and tools is None:
             say("Next: add the quest stages your scripts set and the master script functions they call (or run init "
@@ -369,9 +370,9 @@ def cmd_creations(args):
                             "added": [], "removed": [], "updated": [], "result": "first copy saved", "exit": 0},
                            indent=1))
         else:
-            say(head)
-            say(f"RESULT: SAVED a first copy of the catalog to {saved}. Run sf-patch-day creations again after the "
-                f"next Creations or game update to see what changed.")
+            say(log.show(head))
+            say(log.show(f"RESULT: SAVED a first copy of the catalog to {saved}. Run sf-patch-day creations again "
+                         f"after the next Creations or game update to see what changed."))
         return 0
     when = creations.saved_time(saved)
     _raw, old_header, old = creations.read(saved, "saved copy", "delete it, or give --saved another file, then run "
@@ -393,9 +394,9 @@ def cmd_creations(args):
                         "added": rep["added"], "removed": rep["removed"], "updated": rep["updated"],
                         "result": "changes" if n_changes else "no changes", "exit": code}, indent=1))
         return code
-    say(head)
-    say(f"Compared with: {saved} (saved {when.strftime('%Y-%m-%d %H:%M') if when else 'at an unknown time'}, "
-        f"{len(old)} Creations)")
+    say(log.show(head))  # folder names, escaped like the rest of the report
+    say(log.show(f"Compared with: {saved} (saved {when.strftime('%Y-%m-%d %H:%M') if when else 'at an unknown time'}, "
+                 f"{len(old)} Creations)"))
     if ov != nv:
         say(creations.clean(f"Catalog format version: {ov} -> {nv}"))
     for e in rep["added"]:
@@ -425,8 +426,8 @@ def cmd_fingerprint(args):
             probe, max_own = p.probe_ids()
     except (OSError, PluginError) as e:
         return fail(str(e))
-    say(f"{os.path.basename(path)}: probe FormID {probe:06X} (highest own {'/'.join(sorted(PROBE_TYPES))} in its own "
-        f"group), highest own FormID {max_own:06X} (over all records)")
+    say(log.show(f"{os.path.basename(path)}: probe FormID {probe:06X} (highest own {'/'.join(sorted(PROBE_TYPES))} in "
+                 f"its own group), highest own FormID {max_own:06X} (over all records)"))
     say_warnings()
     return 0
 

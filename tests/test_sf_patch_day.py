@@ -891,25 +891,25 @@ class TestDrift(Temp):
         RESULT line."""
         with open(self.mods, "w", encoding="utf-8") as f:
             json.dump({"mod": "TestMod.esm", "masters": {"TestMaster.esm": {"records": [
-                {"edid": "TM_Start", "copied": True, "why": "made‮up \x1b[2J\nRESULT: no change"},
-                {"edid": "TM_Quest", "stages": [10]}, {"edid": "Made‮Missing"}]}}}, f)
+                {"edid": "TM_Start", "copied": True, "why": "made\u202eup\u2028\x1b[2J\nRESULT: no change"},
+                {"edid": "TM_Quest", "stages": [10]}, {"edid": "Made\u202eMissing"}]}}}, f)
         code, out = run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data)
         self.assertEqual(code, 0, out)
         self.assertIn("1 not found: Made\\u202eMissing)", out)
-        self.assertNotIn("‮", out)
+        self.assertNotIn("\u202e", out)
         write(self.p("Data", "TestMaster.esm"), mk.plugin(0x1, ["Starfield.esm"], [mk.group("QUST", [
             mk.quest(0x01000800, "TM_Quest", [10, 20])])]))
         code, out = self.check()
         self.assertEqual(code, 2, out)
         self.assertIn("TM_Start: GONE (TestMod.esm: made\\u202eup\\u2028\\x1b[2J\\x0aRESULT: no change)", out)
         self.assertIn("Made\\u202eMissing: not found now or in the baseline", out)
-        for ch in ("‮", " ", "\x1b"):
+        for ch in ("\u202e", "\u2028", "\x1b"):
             self.assertNotIn(ch, out)
         self.assertEqual(len([ln for ln in out.splitlines() if ln.startswith("RESULT:")]), 1)
         # --json keeps the raw text (JSON escapes it itself).
         code, out = run("drift", "check", "--mods", self.mods, "--baseline", self.base, "--data", self.data, "--json")
-        self.assertNotIn("‮", out)
-        self.assertTrue(any("made‮up \x1b[2J\nRESULT: no change" in f["text"]
+        self.assertNotIn("\u202e", out)
+        self.assertTrue(any("made\u202eup\u2028\x1b[2J\nRESULT: no change" in f["text"]
                             for f in json.loads(out)["findings"]), out)
 
     def test_master_missing_and_bad_files(self):
@@ -992,6 +992,24 @@ class TestDrift(Temp):
         self.assertIn("probe FormID 000802", out)  # the GLOB is the highest own probe-type record
         with Plugin(self.p("Data", "LightMaster.esm"), [self.data]) as p:
             self.assertEqual(p.mask, 0xFFF)
+
+    def test_init_and_fingerprint_lines_escaped(self):
+        """(0.5.2 code-review round 1) Master names from a plugin header and a plugin's file name reach drift
+        init's and fingerprint's lines: an ESC or newline in them (one byte per character in a header) or a
+        right-to-left override (in a file name) is shown escaped."""
+        mod = self.p("src", "Test\u202eMod.esm")
+        write(mod, mk.plugin(0x1, ["Starfield.esm", "TestMaster.esm", "Ghost\x1b[2J\nRESULT: Master.esm"], [
+            mk.group("CNDF", [mk.cndf(0x01000801, "TM_Start", [1])])]))
+        code, out = run("drift", "init", mod, "-o", self.p("src", "mods.json"), "--data", self.data)
+        self.assertEqual(code, 0, out)
+        self.assertIn("Ghost\\x1b[2J\\x0aRESULT: Master.esm", out)  # the "masters not found" note
+        self.assertIn("  TestMaster.esm: 1 record(s)", out)
+        self.assertNotIn("\x1b", out)
+        self.assertFalse(any(ln.startswith("RESULT:") for ln in out.splitlines()), out)
+        code, out = run("fingerprint", mod, "--data", self.data)
+        self.assertEqual(code, 0, out)
+        self.assertIn("Test\\u202eMod.esm: probe FormID", out)
+        self.assertNotIn("\u202e", out)
 
     def test_stage_never_there_is_a_note(self):
         with open(self.mods, "w", encoding="utf-8") as f:
@@ -1133,7 +1151,7 @@ class TestDrift(Temp):
         """(0.5.2) The case-copy WARNING line holds file names from a folder listing: shown escaped."""
         from sf_patch_day import plugin as plugin_module
         plugin_module.clear_cache()
-        plugin_module.WARNINGS.append(("k", "two copies: Mod‮mse.esm, mod\x1b[2J\nRESULT: no change.esm"))
+        plugin_module.WARNINGS.append(("k", "two copies: Mod\u202emse.esm, mod\x1b[2J\nRESULT: no change.esm"))
         out = io.StringIO()
         try:
             with contextlib.redirect_stdout(out):
@@ -2383,16 +2401,30 @@ class TestCreations(Temp):
         # titles and file lists come from other authors, so they get the same escaping as the dlls report.
         e = self.base()
         self.first(e)
-        e[ID_C] = dict(e[ID_C], Title="Hats‮dlrow  ​X")
-        e["TM_new"] = mk.creation("New", files=["New‮pse.esm"])
+        e[ID_C] = dict(e[ID_C], Title="Hats\u202edlrow\u2028\u2029\u200bX")
+        e["TM_new"] = mk.creation("New", files=["New\u202epse.esm"])
         write(self.cat, mk.catalog(e))
         code, out = self.go()
         self.assertEqual(code, 1, out)
-        for ch in ("‮", " ", " ", "​"):
+        for ch in ("\u202e", "\u2028", "\u2029", "\u200b"):
             self.assertNotIn(ch, out)
         self.assertIn("UPDATED Hats\\u202edlrow\\u2028\\u2029\\u200bX", out)
         self.assertIn("files: New\\u202epse.esm", out)
-        self.assertEqual(creations.clean("a\x1b‮b"), "a\\x1b\\u202eb")
+        self.assertEqual(creations.clean("a\x1b\u202eb"), "a\\x1b\\u202eb")
+
+    def test_folder_names_in_head_lines_escaped(self):
+        # (0.5.2 code-review round 1) The catalog and saved-copy paths in the head lines are escaped too.
+        self.cat = self.p("ga\u202eme", "ContentCatalog.txt")
+        self.saved = self.p("mi\u202ene", "ContentCatalog-saved.txt")
+        out = self.first()
+        self.assertIn("ga\\u202eme", out)
+        self.assertIn("mi\\u202ene", out)  # the RESULT: SAVED line
+        self.assertNotIn("\u202e", out)
+        code, out = self.go()
+        self.assertEqual(code, 0, out)
+        self.assertIn("Compared with: ", out)
+        self.assertIn("mi\\u202ene", out)
+        self.assertNotIn("\u202e", out)
 
     def test_reupload_same_version_shown(self):
         e = self.base()
