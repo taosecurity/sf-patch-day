@@ -551,6 +551,23 @@ class TestRisk(Temp):
                                "wsock32.dll: 1 function); process launch (CreateProcessW)")
         self.assertEqual(r["risk"]["network"]["unlisted"], {"ws2_32.dll": 1, "wsock32.dll": 1})
 
+    def test_text_report_escapes_every_dll_string(self):
+        # 0.5.1: the author (and every other string a DLL, a zip member name or a file name can hold) never reaches
+        # the terminal with a control character in it: no ESC, no C1 control (CSI), no newline that fakes a line.
+        folder = self.p("Plugins")
+        write(os.path.join(folder, "Evil.dll"), mk.sfse_plugin(
+            name="Nm\x1b[31m", author="Au\x1b[2J\nRESULT: fake\x9b", compatible=[V300]))
+        with zipfile.ZipFile(os.path.join(folder, "Pack.zip"), "w") as z:
+            z.writestr("bad\x1b[2Jname\n.dll", b"MZ" + b"\xff" * 100)
+        code, out = run("dlls", "--game-version", "1.16.300", folder)
+        for ch in ("\x1b", "\x9b", "\x00"):
+            self.assertNotIn(ch, out)
+        self.assertIn("by Au\\x1b[2J\\x0aRESULT: fake\\x9b", out)
+        self.assertIn("bad\\x1b[2Jname\\x0a.dll", out)
+        self.assertEqual(len([ln for ln in out.splitlines() if ln.startswith("RESULT:")]), 1, out)
+        self.assertEqual(dlls.show("a\x1b\n\x7f\x85\u2028\u202eb"), "a\\x1b\\x0a\\x7f\\x85\\u2028\\u202eb")
+        self.assertEqual(dlls.show("plain text, \xe9 and 'quotes' stay"), "plain text, \xe9 and 'quotes' stay")
+
     def test_report_text_json_summary_and_log(self):
         folder = self.p("Plugins")
         write(os.path.join(folder, "Net.dll"), mk.sfse_plugin(compatible=[V300], imports=[

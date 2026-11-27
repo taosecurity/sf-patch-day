@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.1 (unreleased)
+
+### Fixed
+
+The `dlls` text report now shows every control character in text it takes from a DLL, a zip member name or a file name as `\xNN` (or `\uNNNN`), including the plugin's author, which 0.5.0 printed as it was. A hostile DLL could put an ESC sequence or a newline in the author field of its version data and so rewrite the terminal or fake a report line. The same escape now covers every other line of the text report (file names, zip member names, reasons, notes). Text without control characters prints exactly as before, and the JSON output was already safe. Verdicts and exit codes don't change.
+
+### Example
+
+This run uses one made-up DLL whose author field holds an escape code and a line break that would otherwise have printed a fake `RESULT:` line (every name in it is made up):
+
+    > .\sf-patch-day.cmd dlls C:\Example\Plugins --game-version 1.16.244
+    WORKS                  ExampleHostile.dll
+        'ExampleHostile' by Mallory\x1b[2J\x0aRESULT: everything checked loads, plugin version 16.0.0; fixed addresses; no structure promise
+        why: lists 1.16.244
+
 ## 0.5.0 (2026-11-27)
 
 ### What's new

@@ -28,8 +28,8 @@ Don't use it to edit plugins, turn mods on or off, or download anything. It does
 ## 3. Install
 
 1. Download `sf-patch-day-<version>.zip` and its `.sha256` from https://github.com/taosecurity/sf-patch-day/releases.
-2. Check the hash: `certutil -hashfile sf-patch-day-0.5.0.zip SHA256` (Windows) or
-   `sha256sum sf-patch-day-0.5.0.zip` (Linux). It must match the `.sha256` file.
+2. Check the hash: `certutil -hashfile sf-patch-day-0.5.1.zip SHA256` (Windows) or
+   `sha256sum sf-patch-day-0.5.1.zip` (Linux). It must match the `.sha256` file.
 3. Unzip it. The folder holds `sf-patch-day.py`, `sf-patch-day.cmd` and `sf_patch_day\`.
 4. Optional: unzip sf-pex-tools 0.1.0 into a folder named `sf-pex-tools` next to the `sf-patch-day` folder.
 
@@ -42,7 +42,7 @@ python -I tests/test_sf_patch_day.py
 ```
 
 It must end with `OK` (some tests say `skipped` when sf-pex-tools isn't installed; that's fine). Then
-`python -I sf-patch-day.py --version` prints `sf-patch-day 0.5.0`.
+`python -I sf-patch-day.py --version` prints `sf-patch-day 0.5.1`.
 
 ## 5. Common tasks
 
