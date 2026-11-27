@@ -22,7 +22,7 @@ MAX_SEEN = 10000  # stop counting matches of one kind here
 _TOKEN = rb"(?:[0-9A-Fa-f]{2}|\?\??)"
 PATTERN_TEXT = re.compile(rb"(?<=\0)" + _TOKEN + rb"(?: " + _TOKEN + rb"){5,300}(?=\0)")
 HEX_LETTER = re.compile(rb"[A-Fa-f]")
-SCANNER_WORDS = ("findpattern", "find_pattern", "patternscan", "pattern_scan", "pattern scan", "scanpattern",
+SCANNER_WORDS = ("findpattern", "find_pattern", "find pattern", "patternscan", "pattern_scan", "pattern scan", "scanpattern",
                  "scan_pattern", "sigscan", "sig_scan", "signature scan", "aob scan", "aobscan",
                  "pattern not found", "signature not found", "sig found", "sig not found", "resolve signature")
 SCANNER_TEXT = re.compile(b"|".join(re.escape(w.encode("ascii")) for w in SCANNER_WORDS), re.I)
@@ -38,11 +38,12 @@ def _plural(n, one, many):
 
 def pattern_strings(data):
     """How many NUL-bounded pattern strings the bytes hold: 6 or more tokens, each two hex digits or ?/??, with at
-    least one wildcard or at least two tokens holding a letter A-F (a table of digit-only numbers is not one)."""
+    least one wildcard or at least one token holding a letter A-F (a table of digit-only numbers is not one; a
+    short function start such as "40 53 48 83 EC 20" has only one letter byte)."""
     n = 0
     for m in PATTERN_TEXT.finditer(data):
         tokens = m.group(0).split(b" ")
-        if any(t.startswith(b"?") for t in tokens) or sum(1 for t in tokens if HEX_LETTER.search(t)) >= 2:
+        if any(t.startswith(b"?") for t in tokens) or any(HEX_LETTER.search(t) for t in tokens):
             n += 1
             if n >= MAX_SEEN:
                 break

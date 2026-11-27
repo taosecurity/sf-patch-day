@@ -676,11 +676,20 @@ class TestScanEvidence(Temp):
                                                                   b"at {}\0")
         self.assertEqual(r["signature_scan_evidence"], ["scanner text: sig not found, resolve signature"])
 
+    def test_one_letter_pattern_and_find_pattern(self):
+        # (0.5.2) A wildcard-free pattern with one A-F byte (push rbx; sub rsp, 20h) counts, and so does the
+        # scanner text "find pattern" (as in a "Failed to find pattern" message).
+        r = self.judge("One.dll", address=1, structure=1, extra=b"\x0040 53 48 83 EC 20\0")
+        self.assertEqual(r["signature_scan_evidence"], ["1 pattern string"])
+        self.assertEqual(r["how"], "signature scans; no game structures")
+        r = self.judge("Find.dll", address=1, structure=1, extra=b"\0Made: failed to Find Pattern for {}\0")
+        self.assertEqual(r["signature_scan_evidence"], ["scanner text: find pattern"])
+
     def test_no_evidence(self):
-        # Digit-only number tables, a single letter token, five tokens, bare AOB/AoB, an unbounded pattern, other
-        # kinds of signature (a web header, a shader's root signature), the game's hand scanner and spdlog's
-        # pattern_formatter are not signs of a pattern scanner.
-        extra = (b"\x0010 20 30 40 50 60 70\0" b"11 22 33 44 55 6A\0" b"?? ?? ?? ?? ??\0AOB\0AoB\0"
+        # Digit-only number tables, five tokens, bare AOB/AoB, an unbounded pattern, other kinds of signature (a
+        # web header, a shader's root signature), the game's hand scanner and spdlog's pattern_formatter are not
+        # signs of a pattern scanner.
+        extra = (b"\x0010 20 30 40 50 60 70\0" b"11 22 33 44 55 66\0" b"?? ?? ?? ?? ??\0AOB\0AoB\0"
                  b"x48 8B ?? ?? ?? ?? E8\0Signature-Input\0bad root signature\0Open the scanner\0"
                  b".?AVScannerMenu@made@@\0.?AVpattern_formatter@spdlog@@\0")
         r = self.judge("Claim.dll", address=1, structure=1, extra=extra)
@@ -875,6 +884,33 @@ class TestDrift(Temp):
         code, out = self.check()
         self.assertEqual(code, 2, out)
         self.assertIn("TM_Start: GONE", out)
+
+    def test_findings_and_snapshot_lines_escaped(self):
+        """(0.5.2) Text from the mods file reaches drift's report lines: a right-to-left override, a line separator,
+        an ESC or a newline in it is shown escaped, so it can't reorder a line, rewrite the terminal or fake a
+        RESULT line."""
+        with open(self.mods, "w", encoding="utf-8") as f:
+            json.dump({"mod": "TestMod.esm", "masters": {"TestMaster.esm": {"records": [
+                {"edid": "TM_Start", "copied": True, "why": "made‮up \x1b[2J\nRESULT: no change"},
+                {"edid": "TM_Quest", "stages": [10]}, {"edid": "Made‮Missing"}]}}}, f)
+        code, out = run("drift", "snapshot", "--mods", self.mods, "-o", self.base, "--data", self.data)
+        self.assertEqual(code, 0, out)
+        self.assertIn("1 not found: Made\\u202eMissing)", out)
+        self.assertNotIn("‮", out)
+        write(self.p("Data", "TestMaster.esm"), mk.plugin(0x1, ["Starfield.esm"], [mk.group("QUST", [
+            mk.quest(0x01000800, "TM_Quest", [10, 20])])]))
+        code, out = self.check()
+        self.assertEqual(code, 2, out)
+        self.assertIn("TM_Start: GONE (TestMod.esm: made\\u202eup\\u2028\\x1b[2J\\x0aRESULT: no change)", out)
+        self.assertIn("Made\\u202eMissing: not found now or in the baseline", out)
+        for ch in ("‮", " ", "\x1b"):
+            self.assertNotIn(ch, out)
+        self.assertEqual(len([ln for ln in out.splitlines() if ln.startswith("RESULT:")]), 1)
+        # --json keeps the raw text (JSON escapes it itself).
+        code, out = run("drift", "check", "--mods", self.mods, "--baseline", self.base, "--data", self.data, "--json")
+        self.assertNotIn("‮", out)
+        self.assertTrue(any("made‮up \x1b[2J\nRESULT: no change" in f["text"]
+                            for f in json.loads(out)["findings"]), out)
 
     def test_master_missing_and_bad_files(self):
         self.snap()
@@ -1092,6 +1128,20 @@ class TestDrift(Temp):
         self.assertEqual(code, 0, out)
         with open(logf, encoding="utf-8") as f:
             self.assertNotIn("can't list", f.read())
+
+    def test_copies_warning_escaped(self):
+        """(0.5.2) The case-copy WARNING line holds file names from a folder listing: shown escaped."""
+        from sf_patch_day import plugin as plugin_module
+        plugin_module.clear_cache()
+        plugin_module.WARNINGS.append(("k", "two copies: Mod‮mse.esm, mod\x1b[2J\nRESULT: no change.esm"))
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                cli.say_warnings()
+        finally:
+            plugin_module.clear_cache()
+        self.assertEqual(out.getvalue(), "WARNING: two copies: Mod\\u202emse.esm, mod\\x1b[2J\\x0aRESULT: no "
+                                         "change.esm\n")
 
     def test_failed_run_still_shows_the_copies_warning(self):
         """A damaged plugin with a second copy that differs only in case (as on Linux): init and check fail, and
@@ -2327,6 +2377,22 @@ class TestCreations(Temp):
         self.assertIn('renamed from "Old Example Patch"', out)
         self.assertIn("X\\x0aRESULT: NO CHANGES since the saved copy.\\x1b[2J", out)
         self.assertIn("New\\x0dHat\\x9b", out)
+
+    def test_format_and_line_separator_characters_in_titles_escaped(self):
+        # (0.5.2) A right-to-left override could reorder a line, and a line or paragraph separator could break it:
+        # titles and file lists come from other authors, so they get the same escaping as the dlls report.
+        e = self.base()
+        self.first(e)
+        e[ID_C] = dict(e[ID_C], Title="Hats‮dlrow  ​X")
+        e["TM_new"] = mk.creation("New", files=["New‮pse.esm"])
+        write(self.cat, mk.catalog(e))
+        code, out = self.go()
+        self.assertEqual(code, 1, out)
+        for ch in ("‮", " ", " ", "​"):
+            self.assertNotIn(ch, out)
+        self.assertIn("UPDATED Hats\\u202edlrow\\u2028\\u2029\\u200bX", out)
+        self.assertIn("files: New\\u202epse.esm", out)
+        self.assertEqual(creations.clean("a\x1b‮b"), "a\\x1b\\u202eb")
 
     def test_reupload_same_version_shown(self):
         e = self.base()

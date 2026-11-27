@@ -66,12 +66,10 @@ def _float(text):
     return v
 
 
-_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
-
-
 def clean(text):
-    """A report line with control characters shown as \\xNN, so a title can't add lines or terminal codes."""
-    return _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}", text)
+    """A report line escaped as log.show does (controls, format and line-separator characters), so a title or file
+    name from another author can't add lines, send terminal codes or reorder the line."""
+    return log.show(text)
 
 
 def read(path, what, fix):

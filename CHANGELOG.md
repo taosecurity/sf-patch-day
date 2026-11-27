@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.2 (unreleased)
+
+### What's new
+
+`creations` now shows the invisible format and line-separator characters in Creation titles and file lists as `\uNNNN`, the same way the `dlls` report does since 0.5.1. Those names come from other authors, and a right-to-left override (U+202E) in a title could make the line read differently from what it holds. Before, only control characters were escaped there. The `drift` report lines (the snapshot summary, its "not found" lines and every `drift check` finding) and the `WARNING:` lines about copies of a file that differ only in case get the same escaping, because they hold names from your mods file, your plugins and your folders. The `--json` output was already safe and doesn't change.
+
+`dlls` also finds more signs of a pattern scanner in a plugin whose version data claims signature scans. Pattern text with only one A-F byte and no wildcard (such as `40 53 48 83 EC 20`, a common function start) now counts, and so does the text "find pattern" (as in a "failed to find pattern" message). Tables of digit-only numbers still don't count. On the 50 real SFSE plugins we checked, no label changed. Verdicts and exit codes don't change.
+
+### Example
+
+This run compares two made-up catalogs, where the new Creation's title holds a right-to-left override (output shortened to the changed lines):
+
+    > .\sf-patch-day.cmd creations
+    ADDED   Example Tools ‮dexiF (TM_example-tools) version 1.2.0, files: ExampleTools.esm
+    RESULT: CHANGES: 1 added, 0 removed, 0 updated. Test these Creations before you play; run with --save to make this the new saved copy.
+
+Before 0.5.2 the title printed as it was, so the terminal showed it reversed after the override.
+
 ## 0.5.1 (2026-11-27)
 
 ### Fixed

@@ -303,15 +303,17 @@ def cmd_drift(args):
         for name, e in now["masters"].items():
             missing = [k for k, v in e["records"].items() if v is None]
             gone = [s for s, v in (e.get("functions") or {}).items() if v is None]
-            say(f"{name}: {len(e['records'])} record(s) ({len(missing)} not found"
+            # Names from the mods file, escaped like every other report line that holds outside text.
+            say(log.show(
+                f"{name}: {len(e['records'])} record(s) ({len(missing)} not found"
                 f"{': ' + ', '.join(missing) if missing else ''}), highest own FormID {e['max_own_id']}, probe "
                 f"{e['probe_id']}"
                 + (f", {sum(len(v or {}) for v in e['functions'].values())} function(s)" if e.get("functions") else "")
                 + (f", scripts not found (check the path and the \"ba2\" archive name): {', '.join(gone)}"
                    if gone else "")
-                + (f"; function checks skipped: {e['functions_skipped']}" if e.get("functions_skipped") else ""))
+                + (f"; function checks skipped: {e['functions_skipped']}" if e.get("functions_skipped") else "")))
             for warning in drift.not_found(mods["masters"][name], e):
-                say(f"  not found (check the name): {warning}")
+                say(log.show(f"  not found (check the name): {warning}"))
         say_warnings()
         say(f"wrote {args.out}")
         return 0
@@ -325,8 +327,8 @@ def cmd_drift(args):
     if args.json:
         say(json.dumps({"findings": [{"level": lv, "text": t.strip()} for lv, t in lines], "exit": code}, indent=1))
     else:
-        for level, text in lines:
-            say(f"{level:6} {text}")
+        for level, text in lines:  # text from the mods file and the plugins: escaped (JSON escapes it itself)
+            say(log.show(f"{level:6} {text}"))
         say(res)
     return code
 
@@ -436,7 +438,7 @@ def say_warnings(always=False):
     if _JSON[0] and not always:
         return
     for w in plugin_module.warnings():
-        say(f"WARNING: {w}")
+        say(log.show(f"WARNING: {w}"))  # file names from a folder listing
 
 
 def missing_step(args, drift_step=False):

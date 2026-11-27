@@ -21,7 +21,7 @@ shortened):
 
 ```
 > .\sf-patch-day.cmd dlls
-sf-patch-day 0.5.1 dlls
+sf-patch-day 0.5.2 dlls
 Game version: 1.16.244 (read from C:\Program Files (x86)\Steam\steamapps\common\Starfield\Starfield.exe)
 SFSE: 0.2.21 for this game version found (sfse_1_16_244.dll)
 Address Library: versionlib-1-16-244-0.bin found (C:\Program Files (x86)\Steam\steamapps\common\Starfield\Data\SFSE\Plugins)
@@ -94,13 +94,13 @@ needs Python 3.9 or newer.
 1. Install Python 3.11 or newer from [python.org](https://www.python.org/downloads/). On the first screen of the
    installer, tick **Add python.exe to PATH**. To check that it worked, open a new Command Prompt and type
    `python --version`. It should print a version number.
-2. Download `sf-patch-day-0.5.1.zip` and its `.sha256` file from the
+2. Download `sf-patch-day-0.5.2.zip` and its `.sha256` file from the
    [releases page](https://github.com/taosecurity/sf-patch-day/releases) and unzip the zip anywhere. If you want
-   to check the download, run `certutil -hashfile sf-patch-day-0.5.1.zip SHA256` (on Linux,
-   `sha256sum sf-patch-day-0.5.1.zip`) and compare the result with the `.sha256` file.
+   to check the download, run `certutil -hashfile sf-patch-day-0.5.2.zip SHA256` (on Linux,
+   `sha256sum sf-patch-day-0.5.2.zip`) and compare the result with the `.sha256` file.
 3. Open the unzipped folder in File Explorer, click the address bar at the top, type `cmd` and press Enter. A
    Command Prompt window opens in that folder, ready for the commands in this README.
-4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.5.1`.
+4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.5.2`.
 
 `.\sf-patch-day.cmd` works in both Command Prompt and PowerShell. It only starts `python -I sf-patch-day.py` with the
 options you give it, so on Linux type `python3 -I sf-patch-day.py` instead. To check the install
@@ -173,7 +173,7 @@ author names changed, output shortened):
 
 ```
 > .\sf-patch-day.cmd dlls --game-version 1.16.250
-sf-patch-day 0.5.1 dlls
+sf-patch-day 0.5.2 dlls
 Game version: 1.16.250 (given with --game-version)
 SFSE: NOT FOUND for this game version (sfse_1_16_250.dll is missing). Every SFSE plugin waits for an SFSE update from its authors.
 Address Library: versionlib-1-16-250-0.bin NOT FOUND in the folders checked (plugins that use it wait for its update)
@@ -280,7 +280,7 @@ DLLs that was.
 **Signature scans, only with evidence.** A DLL's version data can claim that it finds the game's code by signature
 scanning. `dlls` now looks for signs of a scanner in the DLL: byte-pattern text such as `48 8B ?? ?? E8 ?? ??` (a
 whole text string of six or more hex bytes or `?`/`??` wildcards, with at least one wildcard or at least two bytes
-that hold a letter A-F), scanner words such as "FindPattern", or a scanner class name. With signs the plugin reads
+that hold a letter A-F, so `40 53 48 83 EC 20` counts; digit-only number tables don't), scanner words such as "FindPattern" or "find pattern", or a scanner class name. With signs the plugin reads
 `signature scans`. Without them it reads `says signature scans, but no pattern-scan signs found`, and a plugin that
 SFSE would load only because of that claim (it doesn't list this game version or use Address Library, and it promises
 no game structures or the 1.14.70+ layout) gets the MAY FAIL reason "version independent by its version data's
@@ -490,6 +490,8 @@ Check the file and add anything else by hand. The same mod and the same game fil
 The game keeps a list of the Creations you have installed in `ContentCatalog.txt`: each one's title, version and
 files. `creations` compares that list with a copy it saved on an earlier run, and lists the Creations that were
 added, removed or updated since then. Run it after a game update or a visit to the Creations menu, before you test.
+
+Titles and file lists come from other authors, so `creations` (like `drift`) shows control, format and line-separator characters in them as `\xNN` or `\uNNNN`, as `dlls` does.
 
 ```
 .\sf-patch-day.cmd creations
