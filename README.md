@@ -305,7 +305,7 @@ With `--json`, each readable DLL also gets `imports` (`dlls`, `count`, `delayed`
 found); a "can't tell" plugin also gets `framework_hints`. The report gets `risk_counts` (the four counts) and
 `risk_dlls_read`.
 
-The text report never shows a control character from a DLL: in any text taken from a DLL, a zip member name or a file name, an escape code, a newline or an invisible direction mark is shown as `\xNN` (or `\uNNNN`, or `\UNNNNNNNN` above U+FFFF), so a hostile DLL can't rewrite your terminal or fake a report line. The troubleshooting log (`--verbose`, `--log`) escapes its lines the same way. The invisible format characters are escaped too, so a name that uses a zero-width joiner (U+200D) or a soft hyphen (U+00AD) shows it as `\u200d` or `\xad`. Other text prints as it is.
+The text report never shows a control character from a DLL: in any text taken from a DLL, a zip member name or a file name, an escape code, a newline or an invisible direction mark is shown as `\xNN` (or `\uNNNN`, or `\UNNNNNNNN` above U+FFFF), so a hostile DLL can't rewrite your terminal or fake a report line. The troubleshooting log (`--verbose`, `--log`) and the `RESULT: CANNOT CHECK` line of a run that stops escape their text the same way. The invisible format characters are escaped too, so a name that uses a zero-width joiner (U+200D) or a soft hyphen (U+00AD) shows it as `\u200d` or `\xad`. Other text prints as it is.
 
 ## drift: does my mod need a rebuild
 

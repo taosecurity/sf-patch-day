@@ -20,7 +20,12 @@ from .plugin import Plugin, PluginError, PluginReadError, check_copies, clear_ca
 
 
 class DriftError(Exception):
-    """A file can't be read or the mods file is wrong (exit 3). The message names the file and the fix."""
+    """A file can't be read or the mods file is wrong (exit 3). The message names the file and the fix; `more`
+    holds extra detail lines (the mods file's problems), which fail() prints one escaped line each."""
+
+    def __init__(self, msg, more=()):
+        super().__init__(msg)
+        self.more = list(more)
 
 
 # ---- the mods file ---------------------------------------------------------------------------------------------
@@ -35,8 +40,8 @@ def load_mods(path):
                          f"see examples/mods.example.json.")
     problems = validate_mods(mods)
     if problems:
-        raise DriftError(f"{path} doesn't follow the mods file format:\n  " + "\n  ".join(problems) +
-                         "\nFix: see the README section 'The mods file' and examples/mods.example.json.")
+        raise DriftError(f"{path} doesn't follow the mods file format:",
+                         [f"  {p}" for p in problems] + ["Fix: see the README section 'The mods file' and examples/mods.example.json."])
     for spec in mods["masters"].values():
         for r in spec.get("records", []):
             if "type" in r:

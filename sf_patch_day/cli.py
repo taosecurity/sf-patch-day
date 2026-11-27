@@ -116,12 +116,18 @@ def say(line=""):
     print(str(line).encode(enc, "replace").decode(enc, "replace"))
 
 
-def fail(msg):
+def fail(msg, more=()):
+    """The RESULT line, escaped (msg can hold a file, zip member or BA2 member name, so a newline or ESC in it
+    can't fake a line or rewrite the terminal), then each line of `more` (our own detail lines), each escaped on
+    its own line. The log gets the same lines."""
     # A case-copy warning found before the failure may explain it. Shown with --json too: a run that stops here
     # never prints its JSON report, so its output is plain text anyway.
     say_warnings(always=True)
-    say(f"RESULT: CANNOT CHECK: {msg}")
+    say(f"RESULT: CANNOT CHECK: {log.show(msg)}")
     log.info("error", msg)
+    for line in more:
+        say(log.show(line))
+        log.info("error", line)
     return CANNOT
 
 
@@ -468,14 +474,14 @@ def main(argv=None):
                 "fingerprint": cmd_fingerprint}[args.cmd](args)
         return code
     except (drift.DriftError, creations.CreationsError) as e:
-        code = fail(str(e))
+        code = fail(str(e), getattr(e, "more", ()))
         return code
     except KeyboardInterrupt:
         code = fail("stopped (Ctrl+C)")
         return code
     except Exception as e:  # last resort: one line for the reader, the traceback in the log
         # The traceback's frames (our own code) one log line each; the exception's own text, which can hold a file
-        # or zip member name, goes in fail()'s single escaped line below.
+        # or zip member name, goes in fail()'s single escaped line below (on screen and in the log).
         log.info("error", "Traceback (most recent call last):")
         for line in "".join(traceback.format_tb(e.__traceback__)).splitlines():
             log.info("error", line)

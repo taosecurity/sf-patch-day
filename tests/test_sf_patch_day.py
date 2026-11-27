@@ -585,8 +585,11 @@ class TestRisk(Temp):
         def boom(args):
             raise ValueError("bad\n12:00:00 [end] exit code 0")
         with mock.patch.object(cli, "cmd_dlls", boom):
-            code, _ = run("dlls", "--game-version", "1.16.300", folder, "--log", logf)
+            code, out = run("dlls", "--game-version", "1.16.300", folder, "--log", logf)
         self.assertEqual(code, cli.CANNOT)
+        # on screen too: the RESULT line holds the exception text escaped, so it can't print a line of its own
+        self.assertIn("RESULT: CANNOT CHECK: unexpected error (ValueError: bad\\x0a12:00:00 [end] exit code 0)", out)
+        self.assertFalse([ln for ln in out.splitlines() if ln.startswith("12:00:00")], out)
         with open(logf, encoding="utf-8") as f:
             got = f.read().splitlines()
         self.assertFalse([ln for ln in got if not re.match(r"\d\d:\d\d:\d\d \[", ln)], got)
@@ -883,7 +886,8 @@ class TestDrift(Temp):
             f.write('{"masters": {"Data/TestMaster.esm": {"records": [{"stages": "ten"}]}}}')
         code, out = self.check()
         self.assertEqual(code, 3)
-        self.assertIn("doesn't follow the mods file format", out)
+        self.assertIn("doesn't follow the mods file format:\n  ", out)  # one problem per line, as before
+        self.assertIn("\nFix: see the README section 'The mods file'", out)
         with open(self.mods, "w", encoding="utf-8") as f:
             f.write("{not json")
         self.assertIn("isn't valid JSON", self.check()[1])
