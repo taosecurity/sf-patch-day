@@ -121,7 +121,7 @@ def fail(msg):
     # never prints its JSON report, so its output is plain text anyway.
     say_warnings(always=True)
     say(f"RESULT: CANNOT CHECK: {msg}")
-    log.info("error", msg, lines=True)
+    log.info("error", msg)
     return CANNOT
 
 
@@ -474,7 +474,11 @@ def main(argv=None):
         code = fail("stopped (Ctrl+C)")
         return code
     except Exception as e:  # last resort: one line for the reader, the traceback in the log
-        log.info("error", traceback.format_exc(), lines=True)
+        # The traceback's frames (our own code) one log line each; the exception's own text, which can hold a file
+        # or zip member name, goes in fail()'s single escaped line below.
+        log.info("error", "Traceback (most recent call last):")
+        for line in "".join(traceback.format_tb(e.__traceback__)).splitlines():
+            log.info("error", line)
         code = fail(f"unexpected error ({type(e).__name__}: {e}). Run again with --verbose and report the log at "
                     f"https://github.com/taosecurity/sf-patch-day/issues")
         return code

@@ -578,17 +578,22 @@ class TestRisk(Temp):
         self.assertFalse([ln for ln in logged.splitlines() if not re.match(r"\d\d:\d\d:\d\d \[", ln)], logged)
         # a lone surrogate (an undecodable file name) is escaped, so a strict UTF-8 log write can't fail on it
         self.assertEqual(dlls.show("a\udc9bb"), "a\\udc9bb")
-        # our own multi-line text (a traceback) keeps one log line per line, each with the time and section
-        log.setup(log_file=logf)
-        try:
-            log.info("error", "Traceback:\n  File \"x\x1b.py\"\nValueError: bad\n", lines=True)
-            log.info("dlls", "one\nline")
-        finally:
-            log.close()
+        # an unexpected error: the traceback keeps one log line per frame line, and the exception's own text (which
+        # can hold a zip member name) stays on one escaped line, so it can't fake a log line either
+        from unittest import mock
+
+        def boom(args):
+            raise ValueError("bad\n12:00:00 [end] exit code 0")
+        with mock.patch.object(cli, "cmd_dlls", boom):
+            code, _ = run("dlls", "--game-version", "1.16.300", folder, "--log", logf)
+        self.assertEqual(code, cli.CANNOT)
         with open(logf, encoding="utf-8") as f:
             got = f.read().splitlines()
-        self.assertEqual([ln[9:] for ln in got], ['[error] Traceback:', '[error]   File "x\\x1b.py"',
-                                                  '[error] ValueError: bad', '[dlls] one\\x0aline'])
+        self.assertFalse([ln for ln in got if not re.match(r"\d\d:\d\d:\d\d \[", ln)], got)
+        self.assertEqual([ln for ln in got if "[end]" in ln[:20]], [got[-1]], got)
+        self.assertIn("[error] Traceback (most recent call last):", got[1])
+        self.assertTrue(any(ln[9:].startswith('[error]   File "') for ln in got), got)
+        self.assertTrue(any("ValueError: bad\\x0a12:00:00 [end] exit code 0" in ln for ln in got), got)
 
     def test_report_text_json_summary_and_log(self):
         folder = self.p("Plugins")

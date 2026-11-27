@@ -40,16 +40,13 @@ def show(text):
     return "".join(out)
 
 
-def info(section, msg, lines=False):
-    """One log line, escaped. lines=True is for our own multi-line text (a traceback, a list of problems): each of
-    its lines becomes a log line of its own, with the same time and section, and is escaped the same way."""
+def info(section, msg):
+    """One log line, escaped (a newline in msg shows as \\x0a, so no text can start a log line of its own)."""
     if not _sinks:
         return
-    head = f"{datetime.datetime.now().strftime('%H:%M:%S')} [{section}] "
-    parts = str(msg).rstrip("\n").split("\n") if lines else [msg]
-    text = "".join(f"{head}{show(p)}\n" for p in parts)
+    line = f"{datetime.datetime.now().strftime('%H:%M:%S')} [{section}] {show(msg)}\n"
     for s in _sinks:
-        s.write(text)
+        s.write(line)
         s.flush()
 
 
