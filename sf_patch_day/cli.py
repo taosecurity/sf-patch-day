@@ -227,10 +227,10 @@ def cmd_dlls(args):
         if not game:
             return fail("no DLLs given and the game wasn't found. Fix: give a folder, zip or DLL, or --game.")
         default = paths.sfse_plugins_folder(game)
-        if os.path.isdir(default):
-            inputs = [default]
-        else:  # nothing failed to read: the folder is simply not there (always so on Game Pass)
+        if paths.sfse_plugins_folder_missing(game):  # nothing failed to read: it's not there (always so on Game Pass)
             no_folder_note = f"No SFSE plugins folder ({default}): no SFSE plugins are installed."
+        else:  # there, or it can't be told (no read access): read it, so a failure is a CANNOT READ
+            inputs = [default]
     elif game:
         # The Address Library file usually lives in the game's plugin folder even when you check a download.
         al_dirs.append(paths.sfse_plugins_folder(game))

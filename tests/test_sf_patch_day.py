@@ -353,6 +353,33 @@ class TestDllsCommand(Temp):
         self.assertIn("Broken.dll", out)
         self.assertEqual(code, 3, out)  # Broken.dll can't be read, as with the usual spelling
 
+    def test_unreadable_sfse_folder_is_not_called_empty(self):
+        """(0.5.3 code-review round 4) A Data\\SFSE folder this account can't read (an update dropped the read
+        grant) is a CANNOT READ and exit 3, as in 0.5.2, not "no SFSE plugins are installed" and an all-clear.
+        Emulates what Windows does with a deny entry on Data\\SFSE: listing it fails and its Plugins folder
+        doesn't seem to be there."""
+        from unittest import mock
+        game = self.make_game()
+        os.remove(os.path.join(game, "Data", "SFSE", "Plugins", "Broken.dll"))  # else exit 3 either way
+        self.assertNotEqual(run("dlls", "--game", game)[0], 3)  # readable: nothing fails to read
+        sfse = os.path.normcase(os.path.abspath(os.path.join(game, "Data", "SFSE")))
+        real_isdir, real_listdir = os.path.isdir, os.listdir
+
+        def isdir(p):
+            if os.path.normcase(os.path.abspath(p)).startswith(sfse + os.sep):
+                return False
+            return real_isdir(p)
+
+        def listdir(p="."):
+            if os.path.normcase(os.path.abspath(p)).startswith(sfse):
+                raise PermissionError(13, "Access is denied", p)
+            return real_listdir(p)
+        with mock.patch.object(os.path, "isdir", isdir), mock.patch.object(os, "listdir", listdir):
+            code, out = run("dlls", "--game", game)
+        self.assertNotIn("no SFSE plugins are installed", out)
+        self.assertIn("CANNOT READ", out)
+        self.assertEqual(code, 3, out)
+
 
 # ---- which framework a plugin was built with ----------------------------------------------------------------------
 class TestFramework(Temp):

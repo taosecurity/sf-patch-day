@@ -119,6 +119,22 @@ def sfse_plugins_folder(game):
     return folder
 
 
+def sfse_plugins_folder_missing(game, parts=("Data", "SFSE", "Plugins")):
+    """True only when the game has no Data\\SFSE\\Plugins folder in any spelling: some folder on the way lists
+    no such name. False when it is there, and also when that can't be told (a folder on the way can't be read,
+    or a name on the way isn't a folder), so the caller reads it and reports CANNOT READ instead of calling a
+    folder it couldn't see empty."""
+    if not parts:
+        return False
+    try:
+        names = os.listdir(game)
+    except OSError as e:
+        log.info("dlls", f"SFSE plugins folder: can't list {game} ({e}), so it's checked as given")
+        return False
+    return all(sfse_plugins_folder_missing(os.path.join(game, n), parts[1:])
+               for n in names if n.lower() == parts[0].lower())
+
+
 # ---- the Creations catalog (creations command) ----------------------------------------------------------------
 STARFIELD_APP_ID = "1716740"
 
