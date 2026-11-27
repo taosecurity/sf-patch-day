@@ -174,6 +174,8 @@ NO_SCAN_SIGNS = "says signature scans, but no pattern-scan signs found"
 MAY_FAIL_NO_SIGNS = ("version independent by its version data's signature-scan claim, but no pattern-scan signs "
                      "were found (not proof: a scanner can keep its patterns as byte arrays), so it may use fixed "
                      "addresses and refuse to load or crash on this version")
+MAY_FAIL_NO_SIGNS_TODO = ("SFSE loads it, but it may use fixed addresses that changed on this version. Test it, or "
+                          "check its page")
 
 
 def describe_flags(block, scan_signs=None):
@@ -262,7 +264,8 @@ def judge(item, target, al_present, sfse_version):
         log.info("dlls", f"{item.label}: unreadable: {e}")
         return out
     v, reason = verdict(block, target, al_present, sfse_version, scan_signs)
-    out.update(verdict=v, reason=reason, what_to_do=WHAT_TO_DO[v], imports=imports, risk=found)
+    todo = MAY_FAIL_NO_SIGNS_TODO if reason == MAY_FAIL_NO_SIGNS else WHAT_TO_DO[v]
+    out.update(verdict=v, reason=reason, what_to_do=todo, imports=imports, risk=found)
     if block is not None:
         out.update(name=block["name"], author=block["author"],
                    plugin_version=pe.plugin_version_text(block["plugin_version"]),

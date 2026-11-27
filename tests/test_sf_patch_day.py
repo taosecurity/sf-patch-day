@@ -601,6 +601,8 @@ NO_SIGNS_HOW = "says signature scans, but no pattern-scan signs found"
 NO_SIGNS_WHY = ("version independent by its version data's signature-scan claim, but no pattern-scan signs were "
                 "found (not proof: a scanner can keep its patterns as byte arrays), so it may use fixed addresses "
                 "and refuse to load or crash on this version")
+NO_SIGNS_TODO = ("SFSE loads it, but it may use fixed addresses that changed on this version. Test it, or check its "
+                 "page")
 
 
 class TestScanEvidence(Temp):
@@ -614,6 +616,7 @@ class TestScanEvidence(Temp):
         self.assertEqual(r["signature_scan_evidence"], ["1 pattern string"])
         self.assertEqual(r["how"], "signature scans; no game structures")
         self.assertEqual((r["verdict"], r["reason"]), (dlls.MAY_FAIL, "version independent by signature scans"))
+        self.assertEqual(r["what_to_do"], dlls.WHAT_TO_DO[dlls.MAY_FAIL])
         # Two tokens with a letter A-F are enough without a wildcard; scanner words and type names count too.
         r = self.judge("Hex.dll", address=1, structure=1, extra=b"\x0040 53 48 83 EC 20 8B D9\0Made FindPattern\0"
                        b".?AVMemoryScanner@made@@\0.?AVPatternHit@made@@\0")
@@ -637,6 +640,7 @@ class TestScanEvidence(Temp):
         self.assertEqual(r["signature_scan_evidence"], [])
         self.assertEqual(r["how"], NO_SIGNS_HOW + "; no game structures")
         self.assertEqual((r["verdict"], r["reason"]), (dlls.MAY_FAIL, NO_SIGNS_WHY))
+        self.assertEqual(r["what_to_do"], NO_SIGNS_TODO)  # not "the code it searches for"
         # With Address Library too, the claim is still called unbacked, and the verdict is Address Library's.
         r = self.judge("Both.dll", address=5, structure=8)
         self.assertEqual(r["how"], "Address Library, " + NO_SIGNS_HOW + "; 1.14.70+ structure layout")
@@ -663,7 +667,7 @@ class TestScanEvidence(Temp):
         code, out = run("dlls", "--game-version", "1.16.300", folder, "--log", logf)
         self.assertEqual(code, 1)  # MAY FAIL, as before
         self.assertIn(f"    'Claim' by Test Author, plugin version 1; {NO_SIGNS_HOW}; no game structures\n", out)
-        self.assertIn(f"    why: {NO_SIGNS_WHY}\n", out)
+        self.assertIn(f"    why: {NO_SIGNS_WHY}\n    what to do: {NO_SIGNS_TODO}\n", out)
         with open(logf, encoding="utf-8") as f:
             self.assertIn("[hints] Claim.dll: version data says signature scans; pattern-scan signs: none", f.read())
         write(os.path.join(folder, "Claim.dll"), mk.sfse_plugin(name="Claim", address=1, structure=1,

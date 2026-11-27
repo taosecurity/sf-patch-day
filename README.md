@@ -41,7 +41,7 @@ WORKS                  NewModB.dll
 WORKS                  NewModC.dll
     'NewModC' by AuthorC, plugin version 21.7.0; fixed addresses; no structure promise
     framework: plain SFSE (1 SFSE source path; no CommonLibSF signs); Address Library: no signs
-    risk evidence (not a verdict): code patching (VirtualProtect) [most SFSE plugins have this (SFSE's hooks need it)]
+    risk evidence (not a verdict): runtime DLL loading (LoadLibraryA, GetProcAddress); code patching (VirtualProtect) [most SFSE plugins have this (SFSE's hooks need it)]
     why: lists 1.16.244
 ...
 
@@ -52,8 +52,8 @@ RESULT: some plugins wait for an update or need testing (may fail: 3, works: 12)
 
 The first three lines are the base layer that every plugin needs: the game version, SFSE for that version, and the
 Address Library file for it. Then each plugin gets a verdict, a reason and, when there is something to do, what to
-do. Twelve plugins work, and three find the game's code by searching for it, so they need a quick test after an
-update. The last lines sum it up, and the exit code (1 here) says the same thing to scripts.
+do. Twelve plugins work, and three say they find the game's code by searching for it, so they need a quick test
+after an update. The last lines sum it up, and the exit code (1 here) says the same thing to scripts.
 
 Each plugin's `framework` line says what it was built with (see
 [Which framework a plugin uses](#which-framework-a-plugin-uses)); a plugin it can't place also gets a
@@ -159,7 +159,7 @@ Then it gives one verdict per DLL:
 |---|---|---|
 | WORKS | It lists this game version, or it's version independent and what it needs is present. | Nothing. |
 | NEEDS ADDRESS LIBRARY | It finds the game's code through Address Library, and the file for this version isn't installed. | Install the new Address Library file when it's released. |
-| MAY FAIL | It finds the game's code by searching for byte patterns, so SFSE loads it on any version. | It works only if those patterns are unchanged: test it, or check its page. |
+| MAY FAIL | Its version data says it finds the game's code by searching for byte patterns, so SFSE loads it on any version. | It works only if those patterns are unchanged (or, with no pattern-scan signs, if its fixed addresses still fit): test it, or check its page. |
 | NEEDS NEWER SFSE | It asks for a newer SFSE than the one installed. | Update SFSE. |
 | LOCKED | SFSE refuses it on this version. | Turn it off until its author releases an update. |
 | NOT AN SFSE PLUGIN | No SFSE version data (an ASI plugin, a helper DLL, a proxy DLL, or SFSE itself). | Not judged. |
@@ -182,7 +182,7 @@ LOCKED                 MyMod.dll
     'MyMod' by MyName, plugin version 2; Address Library; no structure promise
     framework: can't tell (no CommonLibSF or SFSE source signs); Address Library: yes (version data, versionlib file name, Address Library text)
     framework hints: its own Address Library reader text: "Address Library not found: ", "Unsupported Address Library file: "; its own game version check text: "Only game version 1.16.244 is supported; not patching"
-    risk evidence (not a verdict): network (ws2_32.dll: ntohs, WSAStringToAddressW, WSASetLastError, WSAAddressToStringW, +17 more; mswsock.dll: AcceptEx, GetAcceptExSockaddrs); runtime DLL loading (LoadLibraryExW, GetProcAddress) [the C runtime imports these itself]; code patching (VirtualProtect; text: Xbyak)
+    risk evidence (not a verdict): code patching (VirtualProtect, FlushInstructionCache) [most SFSE plugins have this (SFSE's hooks need it)]
     why: lists only 1.16.244 (it uses Address Library but makes no structure promise, so SFSE treats it as locked)
     what to do: SFSE refuses it on this game version: turn it off until its author releases an update
 NEEDS ADDRESS LIBRARY  NewModB.dll
@@ -278,15 +278,18 @@ imports aren't read at all) says so on its line, as `(import table not fully rea
 DLLs that was.
 
 **Signature scans, only with evidence.** A DLL's version data can claim that it finds the game's code by signature
-scanning. `dlls` now looks for signs of a scanner in the DLL: byte-pattern text such as `48 8B ?? ?? E8 ?? ??` (six
-or more hex bytes, with or without `?` wildcards), scanner words such as "find pattern", or a scanner class name. With
-signs the plugin reads `signature scans`. Without them it reads `says signature scans, but no pattern-scan signs
-found`, and a plugin that SFSE would load only because of that claim (it doesn't list this game version or use
-Address Library) gets the MAY FAIL reason "version independent by its version data's signature-scan claim, but no pattern-scan signs were found
-(not proof: a scanner can keep its patterns as byte arrays), so it may use fixed addresses and refuse to load or crash
-on this version". "No pattern-scan signs" means no text signs were
-found. It is not proof: a scanner that stores its patterns as byte arrays leaves none. The verdict is still SFSE's
-rule and is not changed.
+scanning. `dlls` now looks for signs of a scanner in the DLL: byte-pattern text such as `48 8B ?? ?? E8 ?? ??` (a
+whole text string of six or more hex bytes or `?`/`??` wildcards, with at least one wildcard or at least two bytes
+that hold a letter A-F), scanner words such as "FindPattern", or a scanner class name. With signs the plugin reads
+`signature scans`. Without them it reads `says signature scans, but no pattern-scan signs found`, and a plugin that
+SFSE would load only because of that claim (it doesn't list this game version or use Address Library, and it promises
+no game structures or the 1.14.70+ layout) gets the MAY FAIL reason "version independent by its version data's
+signature-scan claim, but no pattern-scan signs were found (not proof: a scanner can keep its patterns as byte
+arrays), so it may use fixed addresses and refuse to load or crash on this version", and the what to do line "SFSE
+loads it, but it may use fixed addresses that changed on this version. Test it, or check its page".
+
+"No pattern-scan signs" means no text signs were found. It is not proof: a scanner that stores its patterns as byte arrays, or as
+pattern text inside a longer string, leaves none. The verdict is still SFSE's rule and is not changed.
 
 **Framework hints.** For a DLL whose framework is "can't tell", a `framework hints` line lists what could still place
 it: well-known libraries named in its type information (`spdlog`, `fmt`, `toml`, `DKUtil` and a few more), SFSE's own

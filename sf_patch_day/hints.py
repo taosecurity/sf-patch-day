@@ -4,7 +4,7 @@
 
 1. Signature-scan evidence. A plugin's version data can say it finds the game's code by signature scans (flag 1).
    That is the author's claim, so when the flag is set this module looks for signs of a pattern scanner in the
-   DLL: pattern text such as "48 8B ?? ?? E8", scanner words such as "FindPattern", and type names holding
+   DLL: pattern text such as "48 8B ?? ?? E8 ??", scanner words such as "FindPattern", and type names holding
    Pattern, Scanner or SigScan. Without any, the report says the claim is unbacked.
 2. Framework hints, for DLLs the framework module can't place: the libraries its type names come from, SFSE's
    plugin API types, and its own Address Library reader and game version check messages (quoted, escaped, cut).
