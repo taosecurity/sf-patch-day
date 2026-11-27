@@ -279,8 +279,9 @@ DLLs that was.
 
 **Signature scans, only with evidence.** A DLL's version data can claim that it finds the game's code by signature
 scanning. `dlls` now looks for signs of a scanner in the DLL: byte-pattern text such as `48 8B ?? ?? E8 ?? ??` (a
-whole text string of six or more hex bytes or `?`/`??` wildcards, with at least one wildcard or at least two bytes
-that hold a letter A-F, so `40 53 48 83 EC 20` counts; digit-only number tables don't), scanner words such as "FindPattern" or "find pattern", or a scanner class name. With signs the plugin reads
+whole text string of six or more hex bytes or `?`/`??` wildcards, with at least one wildcard or at least one byte
+that holds a letter A-F, so `40 53 48 83 EC 20` counts but a table of digit-only numbers doesn't), scanner words
+such as "FindPattern" or "find pattern", or a scanner class name. With signs the plugin reads
 `signature scans`. Without them it reads `says signature scans, but no pattern-scan signs found`, and a plugin that
 SFSE would load only because of that claim (it doesn't list this game version or use Address Library, and it promises
 no game structures or the 1.14.70+ layout) gets the MAY FAIL reason "version independent by its version data's

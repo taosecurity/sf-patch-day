@@ -13,10 +13,10 @@
 This run compares two made-up catalogs, where the new Creation's title holds a right-to-left override (output shortened to the changed lines):
 
     > .\sf-patch-day.cmd creations
-    ADDED   Example Tools ‮dexiF (TM_example-tools) version 1.2.0, files: ExampleTools.esm
+    ADDED   Example Tools \u202edexiF (TM_22222222-2222-2222-2222-222222222222) version 1.2.0, files: ExampleTools.esm
     RESULT: CHANGES: 1 added, 0 removed, 0 updated. Test these Creations before you play; run with --save to make this the new saved copy.
 
-Before 0.5.2 the title printed as it was, so the terminal showed it reversed after the override.
+Before 0.5.2 the override itself was printed, so a terminal that honors it showed the rest of the line reversed (`dexiF` read as `Fixed`).
 
 ## 0.5.1 (2026-11-27)
 
