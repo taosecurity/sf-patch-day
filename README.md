@@ -492,7 +492,8 @@ The game keeps a list of the Creations you have installed in `ContentCatalog.txt
 files. `creations` compares that list with a copy it saved on an earlier run, and lists the Creations that were
 added, removed or updated since then. Run it after a game update or a visit to the Creations menu, before you test.
 
-Titles and file lists come from other authors, so `creations` (like `drift`) shows control, format and line-separator characters in them as `\xNN` or `\uNNNN`, as `dlls` does.
+Titles and file lists come from other authors, so `creations` (like `drift`) shows control, format and
+line-separator characters in them as `\xNN`, `\uNNNN` or (above U+FFFF) `\UNNNNNNNN`, as `dlls` does.
 
 ```
 .\sf-patch-day.cmd creations
