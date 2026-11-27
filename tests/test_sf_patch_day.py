@@ -439,6 +439,18 @@ class TestRisk(Temp):
         many[0x46:0x48] = struct.pack("<H", pe.MAX_SECTIONS)
         self.assertEqual(pe.PE(bytes(many)).imports()[0], [("kernel32.dll", ["CreateProcessW"], False)])
 
+    def test_imported_dll_limit_said(self):
+        # Code-review round 2, 0.5.0: a DLL past the imported-DLL limit is a limit, not "1 entry skipped", and
+        # exactly the limit followed by the end mark is a whole table.
+        from unittest import mock
+        data = mk.pe_file(imports=[(K32, ["F1"], False), ("x.dll", ["F2"], False), ("ws2_32.dll", ["connect"], False)])
+        with mock.patch.object(pe, "MAX_IMPORT_DLLS", 2):
+            self.assertEqual(pe.PE(data).imports(),
+                             ([("kernel32.dll", ["F1"], False), ("x.dll", ["F2"], False)], 0,
+                              "reading stopped at the limit of 2 imported DLLs in one table; the rest isn't read"))
+        with mock.patch.object(pe, "MAX_IMPORT_DLLS", 3):
+            self.assertEqual(pe.PE(data).imports()[1:], (0, None))
+
     def test_limit_used_up_before_delay_table(self):
         # Code-review round 1, 0.5.0: regular imports that use up the entry limit exactly can't hide the
         # delay-loaded ones without a note.
@@ -587,7 +599,8 @@ class TestRisk(Temp):
 # ---- signature-scan evidence (every pattern, word and type name here is made up) ----------------------------------
 NO_SIGNS_HOW = "says signature scans, but no pattern-scan signs found"
 NO_SIGNS_WHY = ("version independent by its version data's signature-scan claim, but no pattern-scan signs were "
-                "found: it may use fixed addresses and refuse to load or crash on this version")
+                "found (not proof: a scanner can keep its patterns as byte arrays), so it may use fixed addresses "
+                "and refuse to load or crash on this version")
 
 
 class TestScanEvidence(Temp):
@@ -689,11 +702,13 @@ class TestFrameworkHints(Temp):
 
     def test_quotes_escaped_cut_and_capped(self):
         long = b"Only game version 1 is supported, " + b"x" * 100
-        extra = (b"\0Address Library \x1b[2J\"wrong\" file\0" + long + b"\0versionlib two\0addresslib three\0"
+        extra = (b"\0Address Library \x1b[2J\"wrong\" \\x41 file\0" + long + b"\0versionlib two\0addresslib three\0"
                  b"versionlib two\0")
         r = self.one("Odd.dll", mk.sfse_plugin(extra=extra))
         h = r["framework_hints"]
-        self.assertEqual(h["address_library_text"], ["Address Library \\x1b[2J\\x22wrong\\x22 file", "versionlib two"])
+        # The file's own backslash is escaped too, so its text can't pass for this escaping (code-review round 2).
+        self.assertEqual(h["address_library_text"],
+                         ["Address Library \\x1b[2J\\x22wrong\\x22 \\x5cx41 file", "versionlib two"])
         self.assertEqual(h["version_check_text"], [long[:80].decode("ascii") + "..."])
         line = hints.hints_line(h)
         self.assertNotIn("\x1b", line)

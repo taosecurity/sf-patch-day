@@ -101,10 +101,11 @@ NONE_LINE = "    framework hints: none (a stripped or packed DLL leaves none)"
 def quote(text, at=0):
     """A message from the file, safe to show: QUOTE_CUT characters of it (starting a little before `at`, where the
     word that picked it is, when that word would be cut off), then every character outside printable ASCII (and the
-    double quote) shown as \\xNN. '...' marks each cut end."""
+    double quote and the backslash, so the file's own text can't look like this escaping) shown as \\xNN. '...' marks
+    each cut end."""
     start = max(0, at - 20) if at > QUOTE_CUT - 20 else 0
     cut = text[start:start + QUOTE_CUT]
-    shown = re.sub(r'[^\x20-\x7e]|"', lambda m: f"\\x{ord(m.group(0)):02x}", cut)
+    shown = re.sub(r'[^\x20-\x7e]|["\\]', lambda m: f"\\x{ord(m.group(0)):02x}", cut)
     return ("..." if start else "") + shown + ("..." if len(text) > start + QUOTE_CUT else "")
 
 

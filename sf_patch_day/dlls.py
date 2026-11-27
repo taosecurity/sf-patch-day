@@ -172,7 +172,8 @@ def _pdb_counts(item):
 # ---- the verdict -----------------------------------------------------------------------------------------------
 NO_SCAN_SIGNS = "says signature scans, but no pattern-scan signs found"
 MAY_FAIL_NO_SIGNS = ("version independent by its version data's signature-scan claim, but no pattern-scan signs "
-                     "were found: it may use fixed addresses and refuse to load or crash on this version")
+                     "were found (not proof: a scanner can keep its patterns as byte arrays), so it may use fixed "
+                     "addresses and refuse to load or crash on this version")
 
 
 def describe_flags(block, scan_signs=None):

@@ -38,9 +38,9 @@ On a real run over 41 DLLs (the 15 plugins in a Steam install's SFSE folder plus
 
 ### Changes
 
-- `dlls` prints a risk evidence line for each readable DLL and a `Risk evidence:` summary line; JSON `imports`, `risk`, `risk_counts` and `risk_dlls_read`. A DLL whose import table isn't fully read (damaged entries, more than 20,000 imported functions or more than 96 sections) says so on its line and in the summary.
+- `dlls` prints a risk evidence line for each readable DLL and a `Risk evidence:` summary line; JSON `imports`, `risk`, `risk_counts` and `risk_dlls_read`. A DLL whose import table isn't fully read (damaged entries, more than 20,000 imported functions, more than 4,096 imported DLLs in one table, or more than 96 sections) says so on its line and in the summary.
 - `dlls` prints "signature scans" only with signs of a pattern scanner, and otherwise "says signature scans, but no pattern-scan signs found" (the MAY FAIL reason is reworded); JSON `signature_scan_evidence`.
-- `dlls` prints a `framework hints` line for "can't tell" plugins; JSON `framework_hints`.
+- `dlls` prints a `framework hints` line for "can't tell" plugins; JSON `framework_hints`. Text quoted from a DLL shows control characters, the double quote and the backslash as `\xNN`.
 - README.md "What else `dlls` prints about each DLL" explains all three.
 
 ## 0.4.0 (2026-11-25)

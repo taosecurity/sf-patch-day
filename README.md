@@ -260,15 +260,17 @@ C runtime also import `LoadLibraryExW` and `GetProcAddress` for themselves, and 
 and folders. Only function names from sf-patch-day's own table are printed. The report ends with a summary line such
 as `Risk evidence: network 1, process launch 1, runtime DLL loading 3, code patching 3 (of 3 DLLs read)`. A damaged
 import table is noted and skipped, never fatal. An import table that isn't fully read (damaged entries, more than
-20,000 imported functions, or a file with more than 96 sections, whose imports aren't read at all) says so on its
-line, as `(import table not fully read: ...)`, and the summary adds how many DLLs that was.
+20,000 imported functions, more than 4,096 imported DLLs in one table, or a file with more than 96 sections, whose
+imports aren't read at all) says so on its line, as `(import table not fully read: ...)`, and the summary adds how many
+DLLs that was.
 
 **Signature scans, only with evidence.** A DLL's version data can claim that it finds the game's code by signature
 scanning. `dlls` now looks for signs of a scanner in the DLL: byte-pattern text with `??` wildcards, scanner words such
 as "find pattern", or a scanner class name. With signs the plugin reads `signature scans`. Without them it reads
 `says signature scans, but no pattern-scan signs found`, and a plugin that SFSE treats as version independent gets the
-MAY FAIL reason "version independent by its version data's signature-scan claim, but no pattern-scan signs were found:
-it may use fixed addresses and refuse to load or crash on this version". "No pattern-scan signs" means no text signs were
+MAY FAIL reason "version independent by its version data's signature-scan claim, but no pattern-scan signs were found
+(not proof: a scanner can keep its patterns as byte arrays), so it may use fixed addresses and refuse to load or crash
+on this version". "No pattern-scan signs" means no text signs were
 found. It is not proof: a scanner that stores its patterns as byte arrays leaves none. The verdict is still SFSE's
 rule and is not changed.
 

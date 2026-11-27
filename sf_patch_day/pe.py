@@ -166,7 +166,7 @@ class PE:
         if len(self.sections) > MAX_SECTIONS:
             return out, 0, (f"the file has {len(self.sections)} sections, more than the {MAX_SECTIONS} this tool "
                             f"reads, so no imports were read")
-        self._left, self._stopped = MAX_THUNKS, False
+        self._left, self._stopped, dll_limit = MAX_THUNKS, False, False
         for index, delayed in ((1, False), (13, True)):
             if len(self.dirs) <= index or not self.dirs[index][0]:
                 continue
@@ -177,7 +177,7 @@ class PE:
             try:
                 for i in range(MAX_IMPORT_DLLS + 1):
                     o = self.off(rva + i * step)
-                    if i == MAX_IMPORT_DLLS or o is None or o + step > len(d):
+                    if o is None or o + step > len(d):
                         skipped += 1
                         break
                     if delayed:
@@ -191,6 +191,9 @@ class PE:
                         if not (oft or name_rva or ft):
                             break
                         base, table = 0, oft or ft
+                    if i == MAX_IMPORT_DLLS:  # one more DLL after the limit: say so, don't call it damage
+                        dll_limit = True
+                        break
                     name = self._import_name(name_rva - base)
                     if name is None or not table:
                         skipped += 1
@@ -204,8 +207,10 @@ class PE:
                 skipped += 1
             if self._stopped:
                 break
-        return out, skipped, (f"reading stopped at the limit of {MAX_THUNKS:,} function entries; the rest isn't "
-                              f"read" if self._stopped else None)
+        why = ([f"reading stopped at the limit of {MAX_IMPORT_DLLS:,} imported DLLs in one table; the rest isn't "
+                f"read"] if dll_limit else []) + ([f"reading stopped at the limit of {MAX_THUNKS:,} function entries; "
+                                                   f"the rest isn't read"] if self._stopped else [])
+        return out, skipped, "; ".join(why) or None
 
     def file_version(self):
         """(major, minor, build, revision) from the version resource, or None. Looks for the VS_FIXEDFILEINFO
