@@ -278,7 +278,8 @@ a framework: other plugins use `spdlog` and `fmt` too. The `Frameworks:` counts 
 the line reads `framework hints: none (a stripped or packed DLL leaves none)`.
 
 With `--json`, each readable DLL also gets `imports` (`dlls`, `count`, `delayed`, `problem`) and `risk` (`network`,
-`process_launch`, `dll_loading` and `code_patching`, each with its `imports` and `note`); each SFSE plugin gets
+`process_launch`, `dll_loading` and `code_patching`, each with its `imports` and `note`; `network` also has `dlls` and
+`unlisted`, the count of other functions per networking DLL, and `code_patching` has `other_process` and `text`); each SFSE plugin gets
 `signature_scan_evidence` (`null` unless its version data claims signature scans, `[]` when it does but nothing was
 found); a "can't tell" plugin also gets `framework_hints`. The report gets `risk_counts` (the four counts) and
 `risk_dlls_read`.

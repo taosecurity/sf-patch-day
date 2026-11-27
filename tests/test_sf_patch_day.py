@@ -414,6 +414,23 @@ class TestRisk(Temp):
         self.assertEqual(pe.PE(mk.pe_file(imports=imports, bits=32)).imports(), want)  # PE32 too
         self.assertEqual(pe.PE(mk.pe_file()).imports(), ([], 0))
 
+    def test_pe_imports_limits(self):
+        # Bug hunt 0.5.0: the function-entry limit is for the whole file, so many imported DLLs (or descriptors
+        # sharing one long table) can't make a small hostile file read millions of names.
+        from unittest import mock
+        data = mk.pe_file(imports=[(f"x{i}.dll", [f"F{j}" for j in range(40)], False) for i in range(10)])
+        with mock.patch.object(pe, "MAX_THUNKS", 50):
+            entries, skipped = pe.PE(data).imports()
+        self.assertLessEqual(sum(len(f) for _d, f, _x in entries), 50)
+        self.assertEqual(skipped, 1)
+        self.assertEqual(len(entries), 2)  # reading stops once the limit is used up
+        # More sections than Windows loads: the imports aren't read (each lookup walks every section).
+        many = bytearray(mk.pe_file(imports=[(K32, ["CreateProcessW"], False)], extra=bytes(8192)))
+        struct.pack_into("<H", many, 0x46, pe.MAX_SECTIONS + 1)
+        self.assertEqual(pe.PE(bytes(many)).imports(), ([], 1))
+        many[0x46:0x48] = struct.pack("<H", pe.MAX_SECTIONS)
+        self.assertEqual(pe.PE(bytes(many)).imports()[0], [("kernel32.dll", ["CreateProcessW"], False)])
+
     def test_each_kind_text_and_json(self):
         r = self.judge("All.dll", mk.sfse_plugin(compatible=[V300], imports=[
             (K32, ["CreateProcessW", "LoadLibraryW", "GetProcAddress", "VirtualProtect", "FlushInstructionCache",

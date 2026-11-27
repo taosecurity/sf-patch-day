@@ -12,8 +12,9 @@ import struct
 
 
 MAX_IMPORT_DLLS = 4096  # import descriptors read per directory
-MAX_THUNKS = 20000      # functions read per imported DLL
+MAX_THUNKS = 20000      # function entries read per file, all imported DLLs together (real plugins: under 1,000)
 MAX_IMPORT_NAME = 256   # bytes in a DLL or function name
+MAX_SECTIONS = 96       # Windows won't load a program file with more sections; its imports aren't read
 
 
 class PEError(Exception):
@@ -129,13 +130,15 @@ class PE:
 
     def _thunks(self, rva, base=0):
         """([function names, or '#n' for imports by ordinal], entries skipped) for one DLL's name table at rva.
-        base is subtracted from the name addresses (the old delay-load form stores addresses, not RVAs)."""
+        base is subtracted from the name addresses (the old delay-load form stores addresses, not RVAs). Each entry
+        read uses one of self._left, the file's MAX_THUNKS (several DLLs can share one table)."""
         size = 8 if self.is64 else 4
         fmt, by_ordinal = ("<Q", 1 << 63) if self.is64 else ("<I", 1 << 31)
-        names, skipped = [], 0
-        for i in range(MAX_THUNKS + 1):
-            o = self.off(rva + i * size)
-            if i == MAX_THUNKS or o is None or o + size > len(self.data):
+        names, skipped, i = [], 0, 0
+        while True:
+            o = self.off(rva + i * size) if self._left > 0 else None
+            self._left, i = self._left - 1, i + 1
+            if o is None or o + size > len(self.data):
                 return names, skipped + 1  # too many, or the table runs out of the file before its end mark
             t = struct.unpack_from(fmt, self.data, o)[0]
             if not t:
@@ -148,15 +151,18 @@ class PE:
                 skipped += 1
             else:
                 names.append(name.decode("latin-1"))
-        return names, skipped
 
     def imports(self):
         """([(DLL name lowercased, [function names or '#n' ordinals], delay-loaded)], entries skipped) from the
         import directory and the delay-load directory. A damaged entry is skipped and counted, never fatal. Limits:
-        MAX_IMPORT_DLLS descriptors per directory, MAX_THUNKS functions per DLL, names up to MAX_IMPORT_NAME bytes."""
+        MAX_IMPORT_DLLS descriptors per directory, MAX_THUNKS function entries per file (reading stops there),
+        names up to MAX_IMPORT_NAME bytes; a file with more than MAX_SECTIONS sections gives ([], 1)."""
         out, skipped, d = [], 0, self.data
+        if len(self.sections) > MAX_SECTIONS:
+            return out, 1
+        self._left = MAX_THUNKS
         for index, delayed in ((1, False), (13, True)):
-            if len(self.dirs) <= index or not self.dirs[index][0]:
+            if len(self.dirs) <= index or not self.dirs[index][0] or self._left <= 0:
                 continue
             rva, step = self.dirs[index][0], (32 if delayed else 20)
             try:
@@ -183,6 +189,8 @@ class PE:
                     funcs, bad = self._thunks(table - base, base)
                     skipped += bad
                     out.append((name.decode("latin-1").lower(), funcs, delayed))
+                    if self._left < 0:
+                        break  # the file's entry limit is used up: the rest isn't read
             except (struct.error, IndexError, ValueError):
                 skipped += 1
         return out, skipped
