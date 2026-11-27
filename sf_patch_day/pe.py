@@ -68,8 +68,16 @@ class PE:
             raise PEError(f"{self.name}: unterminated name in the export table")
         return bytes(self.data[offset:end])
 
+    def _refuse_many_sections(self):
+        """Each address lookup walks every section, so a file with a huge section count stalls the export readers
+        (a 65,535-section file took minutes). Refuse it the way imports() does."""
+        if len(self.sections) > MAX_SECTIONS:
+            raise PEError(f"{self.name}: the file has {len(self.sections)} sections, more than the {MAX_SECTIONS} "
+                          f"this tool reads")
+
     def export_offset(self, wanted):
         """File offset of the export called `wanted` (bytes), or None."""
+        self._refuse_many_sections()
         if len(self.dirs) < 1:
             return None
         exp_rva, _ = self.dirs[0]
@@ -95,6 +103,7 @@ class PE:
 
     def export_names(self):
         """The set of names in the export table (bytes); empty when there is none. Damaged entries are skipped."""
+        self._refuse_many_sections()
         if len(self.dirs) < 1 or not self.dirs[0][0]:
             return set()
         e = self.off(self.dirs[0][0])

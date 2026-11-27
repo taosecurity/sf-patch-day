@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
 import makers as mk  # noqa: E402
-from sf_patch_day import cli, creations, dlls, drift, log, paths, pe, pextools, scripts  # noqa: E402
+from sf_patch_day import cli, creations, dlls, drift, framework, log, paths, pe, pextools, scripts  # noqa: E402
 try:
     from sf_patch_day import risk  # noqa: E402  (0.5.0)
 except ImportError:  # lets the 0.4.0 code run these tests and show them failing
@@ -84,6 +84,29 @@ class TestPE(unittest.TestCase):
             pe.sfse_block(b"not a program at all" * 10)
         with self.assertRaises(pe.PEError):
             pe.sfse_block(mk.sfse_plugin()[:0x500])  # cut short
+
+    def test_many_sections_refused(self):
+        # Round 3, C1: the export readers walk every section for each name, so a file with 65,535 sections stalled
+        # them for minutes. They refuse it, as imports() does, and fast.
+        import time
+        many = bytearray(mk.sfse_plugin(name="Alpha")) + bytes(40 * 65535)
+        struct.pack_into("<H", many, 0x46, 65535)
+        t = time.time()
+        with self.assertRaises(pe.PEError) as cm:
+            pe.sfse_block(bytes(many), "Big.dll")
+        self.assertIn("65535 sections, more than the 96", str(cm.exception))
+        self.assertEqual(pe.PE(bytes(many)).imports()[0], [])
+        with self.assertRaises(pe.PEError):
+            pe.PE(bytes(many)).export_names()
+        self.assertEqual(framework.exports(bytes(many), "Big.dll"), [])
+        self.assertLess(time.time() - t, 5)
+        # exactly the limit still reads
+        ok = bytearray(mk.sfse_plugin(name="Alpha")) + bytes(40 * pe.MAX_SECTIONS)
+        struct.pack_into("<H", ok, 0x46, pe.MAX_SECTIONS)
+        self.assertEqual(pe.sfse_block(bytes(ok))["name"], "Alpha")
+        struct.pack_into("<H", ok, 0x46, pe.MAX_SECTIONS + 1)
+        with self.assertRaises(pe.PEError):
+            pe.sfse_block(bytes(ok))
 
     def test_file_version(self):
         self.assertEqual(pe.PE(mk.pe_file(file_version=(1, 16, 300, 0))).file_version(), (1, 16, 300, 0))
@@ -266,6 +289,19 @@ class TestDllsCommand(Temp):
         self.assertEqual(code, 0, out)
         self.assertEqual(out.count("Game Pass install"), 1, out)  # said once
         self.assertNotIn("waits for an SFSE update", out)
+        # Round 3, C2: no Data\SFSE\Plugins folder means no SFSE plugins installed, not a read failure.
+        shutil.rmtree(os.path.join(game, "Data", "SFSE"))
+        code, out = run("dlls", "--game", game)
+        self.assertEqual(code, 0, out)
+        self.assertIn("no SFSE plugins are installed", out)
+        self.assertNotIn("CANNOT READ", out)
+        self.assertIn("Game Pass install", out)
+        os.remove(os.path.join(game, "appxmanifest.xml"))
+        steam = self.make_game()
+        shutil.rmtree(os.path.join(steam, "Data", "SFSE"))
+        code, out = run("dlls", "--game", steam)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("CANNOT READ", out)
         self.assertEqual(run("dlls", "--game", self.p("nowhere"))[0], 3)
         self.assertEqual(run("dlls", self.p("x.zip"), "--game-version", "soon")[0], 3)
         self.assertEqual(run("dlls", self.p("missing.dll"), "--game-version", "1.16.300")[0], 3)
@@ -431,11 +467,10 @@ class TestRisk(Temp):
         struct.pack_into("<H", many, 0x46, pe.MAX_SECTIONS + 1)
         self.assertEqual(pe.PE(bytes(many)).imports(),
                          ([], 0, "the file has 97 sections, more than the 96 this tool reads, so no imports were read"))
+        # Round 3, C1: judge() refuses the file too (the export readers walk every section), and names the limit.
         r = self.judge("Many.dll", bytes(many))
-        self.assertEqual(risk.text_line(r["risk"], r["imports"]["problem"]),
-                         "    risk evidence (not a verdict): none of the four kinds in the imports read (import table "
-                         "not fully read: the file has 97 sections, more than the 96 this tool reads, so no imports "
-                         "were read)")
+        self.assertEqual(r["verdict"], dlls.UNREADABLE)
+        self.assertIn("97 sections, more than the 96", r["reason"])
         many[0x46:0x48] = struct.pack("<H", pe.MAX_SECTIONS)
         self.assertEqual(pe.PE(bytes(many)).imports()[0], [("kernel32.dll", ["CreateProcessW"], False)])
 

@@ -222,11 +222,15 @@ def cmd_dlls(args):
     else:
         return fail("Starfield wasn't found, so the game version is unknown. Fix: give --game <folder holding "
                     "Starfield.exe> or --game-version X.Y.Z.")
-    inputs, al_dirs = list(args.paths), []
+    inputs, al_dirs, no_folder_note = list(args.paths), [], None
     if not inputs:
         if not game:
             return fail("no DLLs given and the game wasn't found. Fix: give a folder, zip or DLL, or --game.")
-        inputs = [paths.sfse_plugins_folder(game)]
+        default = paths.sfse_plugins_folder(game)
+        if os.path.isdir(default):
+            inputs = [default]
+        else:  # nothing failed to read: the folder is simply not there (always so on Game Pass)
+            no_folder_note = f"No SFSE plugins folder ({default}): no SFSE plugins are installed."
     elif game:
         # The Address Library file usually lives in the game's plugin folder even when you check a download.
         al_dirs.append(paths.sfse_plugins_folder(game))
@@ -236,6 +240,8 @@ def cmd_dlls(args):
         say(json.dumps(rep, indent=1))
     else:
         say(f"sf-patch-day {VERSION} dlls")
+        if no_folder_note:
+            say(no_folder_note)
         for line in dlls.text_report(rep, how_version):
             say(line)
     return rep["exit"]
