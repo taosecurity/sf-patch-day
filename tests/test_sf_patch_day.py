@@ -272,6 +272,18 @@ class TestDllsCommand(Temp):
         self.assertEqual(r["verdict"], dlls.MAY_FAIL)
         self.assertIn("names an Address Library file", r["hint"])
 
+    def test_round3_xboxgames_folder_name_alone_is_not_game_pass(self):
+        """(0.5.3, Round 3 C6) A Steam library inside a folder named XboxGames is still Steam: Game Pass installs
+        are told apart by their appxmanifest.xml."""
+        game = self.make_game()
+        inside = os.path.join(self.p("XboxGames", "SteamLibrary"), "Starfield")
+        shutil.copytree(game, inside)
+        self.assertFalse(paths.is_game_pass(inside))
+        code, out = run("dlls", "--game", inside)
+        self.assertNotIn("Game Pass install", out)
+        write(os.path.join(inside, "appxmanifest.xml"), b"<made-up/>")
+        self.assertTrue(paths.is_game_pass(inside))
+
     def test_game_pass_and_errors(self):
         game = self.make_game(with_sfse=False)
         write(os.path.join(game, "appxmanifest.xml"), b"<made-up/>")
@@ -1028,6 +1040,46 @@ class TestDrift(Temp):
         with Plugin(self.p("Data", "LightMaster.esm"), [self.data]) as p:
             self.assertEqual(p.mask, 0xFFF)
 
+    def test_round3_fingerprint_finds_data_and_warns(self):
+        """(0.5.3, Round 3 C3) A plugin outside Data still finds its masters in the game's Data folder (so a light
+        master isn't counted as full), and a master that isn't found gets a WARNING line."""
+        from unittest import mock
+        mod = self.p("src", "OutMod.esm")
+        write(mod, mk.plugin(0x1, ["Starfield.esm", "LightMaster.esm"], [
+            mk.group("GLOB", [mk.glob(0x01000802, "OM_Glob", 0)])]))
+        code, with_data = run("fingerprint", mod, "--data", self.data)
+        self.assertEqual(code, 0, with_data)
+        with mock.patch.object(paths, "find_game", return_value=(self.p(), "found automatically")):
+            code, auto = run("fingerprint", mod)
+        self.assertEqual(code, 0, auto)
+        self.assertEqual(auto, with_data)
+        self.assertNotIn("WARNING", auto)
+        with mock.patch.object(paths, "find_game", return_value=(None, [])):
+            code, blind = run("fingerprint", mod)
+        self.assertEqual(code, 0, blind)
+        self.assertIn("LightMaster.esm", blind)
+        self.assertIn("WARNING: these masters weren", blind)
+
+    def test_round3_drift_check_baseline_first(self):
+        """(0.5.3, Round 3 C4 and C5) A missing baseline is reported before any master is read, and a damaged
+        master entry in a baseline is a CANNOT CHECK that names the file, not a KeyError."""
+        from unittest import mock
+        with mock.patch.object(drift, "take", side_effect=AssertionError("scanned before the baseline was read")):
+            code, out = self.check()
+        self.assertEqual(code, 3, out)
+        self.assertIn("can't read the baseline", out)
+        self.snap()
+        with open(self.base, encoding="utf-8") as f:
+            base = json.load(f)
+        base["masters"]["TestMaster.esm"] = {}
+        with open(self.base, "w", encoding="utf-8") as f:
+            json.dump(base, f)
+        code, out = self.check()
+        self.assertEqual(code, 3, out)
+        self.assertNotIn("KeyError", out)
+        self.assertIn("TestMaster.esm", out)
+        self.assertIn("run drift snapshot again", out)
+
     def test_init_and_fingerprint_lines_escaped(self):
         """(0.5.2 code-review round 1) Master names from a plugin header and a plugin's file name reach drift
         init's and fingerprint's lines: an ESC or newline in them (one byte per character in a header) or a
@@ -1221,7 +1273,9 @@ class TestDrift(Temp):
             self.assertIn("RESULT: CANNOT CHECK", out)
             with open(self.mods, "w", encoding="utf-8") as f:
                 json.dump({"masters": {"Mod.esm": {"records": []}}}, f)
-            code, out = run("drift", "check", "--mods", self.mods, "--baseline", self.p("none.json"),
+            with open(self.p("empty-baseline.json"), "w", encoding="utf-8") as f:
+                json.dump({"masters": {}}, f)  # read first since 0.5.3, so the scan is what fails
+            code, out = run("drift", "check", "--mods", self.mods, "--baseline", self.p("empty-baseline.json"),
                             "--data", folder, "--json")
             self.assertEqual(code, 3, out)
             self.assertIn("WARNING:", out)

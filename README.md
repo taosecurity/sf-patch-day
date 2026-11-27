@@ -21,7 +21,7 @@ shortened):
 
 ```
 > .\sf-patch-day.cmd dlls
-sf-patch-day 0.5.2 dlls
+sf-patch-day 0.5.3 dlls
 Game version: 1.16.244 (read from C:\Program Files (x86)\Steam\steamapps\common\Starfield\Starfield.exe)
 SFSE: 0.2.21 for this game version found (sfse_1_16_244.dll)
 Address Library: versionlib-1-16-244-0.bin found (C:\Program Files (x86)\Steam\steamapps\common\Starfield\Data\SFSE\Plugins)
@@ -94,13 +94,13 @@ needs Python 3.9 or newer.
 1. Install Python 3.11 or newer from [python.org](https://www.python.org/downloads/). On the first screen of the
    installer, tick **Add python.exe to PATH**. To check that it worked, open a new Command Prompt and type
    `python --version`. It should print a version number.
-2. Download `sf-patch-day-0.5.2.zip` and its `.sha256` file from the
+2. Download `sf-patch-day-0.5.3.zip` and its `.sha256` file from the
    [releases page](https://github.com/taosecurity/sf-patch-day/releases) and unzip the zip anywhere. If you want
-   to check the download, run `certutil -hashfile sf-patch-day-0.5.2.zip SHA256` (on Linux,
-   `sha256sum sf-patch-day-0.5.2.zip`) and compare the result with the `.sha256` file.
+   to check the download, run `certutil -hashfile sf-patch-day-0.5.3.zip SHA256` (on Linux,
+   `sha256sum sf-patch-day-0.5.3.zip`) and compare the result with the `.sha256` file.
 3. Open the unzipped folder in File Explorer, click the address bar at the top, type `cmd` and press Enter. A
    Command Prompt window opens in that folder, ready for the commands in this README.
-4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.5.2`.
+4. Run `.\sf-patch-day.cmd --version`. It should print `sf-patch-day 0.5.3`.
 
 `.\sf-patch-day.cmd` works in both Command Prompt and PowerShell. It only starts `python -I sf-patch-day.py` with the
 options you give it, so on Linux type `python3 -I sf-patch-day.py` instead. To check the install
@@ -173,7 +173,7 @@ author names changed, output shortened):
 
 ```
 > .\sf-patch-day.cmd dlls --game-version 1.16.250
-sf-patch-day 0.5.2 dlls
+sf-patch-day 0.5.3 dlls
 Game version: 1.16.250 (given with --game-version)
 SFSE: NOT FOUND for this game version (sfse_1_16_250.dll is missing). Every SFSE plugin waits for an SFSE update from its authors.
 Address Library: versionlib-1-16-250-0.bin NOT FOUND in the folders checked (plugins that use it wait for its update)
@@ -569,7 +569,7 @@ folders and shows them only to programs it starts:
 |---|---|---|
 | 0 | Every plugin checked works. | No change. |
 | 1 | Some plugins need Address Library, may fail, or need a newer SFSE, or SFSE for this version is missing. | A master changed, but nothing your mod uses; a name to check; a check was skipped; or a WARN about copies of a file. |
-| 2 | At least one plugin is locked to other game versions, or the install is Game Pass (SFSE doesn't run there). | Rebuild: something your mod uses changed. |
+| 2 | At least one plugin is locked to other game versions, or the install is Game Pass and an SFSE plugin was checked (SFSE doesn't run there; with no plugin checked, Game Pass alone gives 0). | Rebuild: something your mod uses changed. |
 | 3 | A file couldn't be read, or the command was wrong. | A file couldn't be read, or the command was wrong. |
 
 `creations` returns 0 when nothing changed or it saved a first copy, 1 when Creations were added, removed or

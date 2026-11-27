@@ -271,6 +271,14 @@ def not_found(spec, entry):
     return out
 
 
+def check_baseline(base, path):
+    """Refuses a baseline whose master entries lack what compare reads (a hand-damaged file)."""
+    for name, e in base["masters"].items():
+        if not isinstance(e, dict) or any(k not in e for k in ("sha256", "size", "modified", "max_own_id")):
+            raise DriftError(f"the baseline {path} has a damaged entry for {name}. Fix: run drift snapshot again "
+                             f"(only after checking your mod works with the masters as they are now).")
+
+
 def compare(base, now, mods):
     """[(level, text)]. ACTION = something the mod uses changed (rebuild); NOTE = changed, not used; SKIP = a check
     that couldn't run; OK = unchanged. Names are matched without regard to case, as the game does, so fixing a

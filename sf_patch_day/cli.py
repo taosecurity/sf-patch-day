@@ -299,6 +299,12 @@ def cmd_drift(args):
         if os.path.exists(args.out) and not args.force:
             raise drift.DriftError(f"{args.out} already exists. Fix: add --force to replace it (only after you rebuild "
                                    f"your mod), or pick another name.")
+    base = None
+    if args.drift_cmd != "snapshot":  # before the (slow) scan: a baseline that can't be read stops the run now
+        base = load_json(args.baseline, "baseline")
+        if not isinstance(base, dict) or not isinstance(base.get("masters"), dict):
+            return fail(f"{args.baseline} isn't an sf-patch-day baseline. Fix: run drift snapshot to make one.")
+        drift.check_baseline(base, args.baseline)
     tools, tools_msg = (None, "no functions listed")
     if any(s.get("functions") for s in mods["masters"].values()):
         tools, tools_msg = pextools.find(args.pex_tools)
@@ -324,9 +330,6 @@ def cmd_drift(args):
         say_warnings()
         say(f"wrote {args.out}")
         return 0
-    base = load_json(args.baseline, "baseline")
-    if not isinstance(base, dict) or not isinstance(base.get("masters"), dict):
-        return fail(f"{args.baseline} isn't an sf-patch-day baseline. Fix: run drift snapshot to make one.")
     lines = drift.compare(base, now, mods)
     # Several copies that differ only in case: the check may describe a file the game doesn't load.
     lines += [(drift.WARN, w) for w in plugin_module.warnings()]
@@ -424,14 +427,24 @@ def cmd_creations(args):
 
 
 def cmd_fingerprint(args):
-    dirs, _ = data_dirs(args) if (args.data or args.plugin_dir or not os.path.isfile(args.plugin)) else ([], None)
+    if args.data or args.plugin_dir or not os.path.isfile(args.plugin):
+        dirs, _ = data_dirs(args)
+    else:  # a plugin given by path: still use the game's Data folder for its masters when one is found
+        try:
+            dirs, _ = data_dirs(args)
+        except drift.DriftError:
+            dirs = []
     path = args.plugin if os.path.isfile(args.plugin) else drift.find_file(args.plugin, dirs, "Plugin")
     plugin_module.check_copies(path)
     try:
         with Plugin(path, dirs) as p:
             probe, max_own = p.probe_ids()
+            unknown = list(p.unknown)
     except (OSError, PluginError) as e:
         return fail(str(e))
+    if unknown:
+        say(log.show(f"WARNING: these masters weren't found, so they are counted as full masters and the result may be wrong: "
+                     f"{', '.join(unknown)}. Fix: give the game's Data folder with --data."))
     say(log.show(f"{os.path.basename(path)}: probe FormID {probe:06X} (highest own {'/'.join(sorted(PROBE_TYPES))} in "
                  f"its own group), highest own FormID {max_own:06X} (over all records)"))
     say_warnings()

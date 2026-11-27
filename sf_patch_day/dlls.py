@@ -412,7 +412,7 @@ def _text_lines(rep, how_version):
         lines.append(f"CANNOT READ: {p['path']}: {p['problem']}")
     lines.append("")
     if not rep["plugins"]:
-        lines.append("No DLLs found in: " + ", ".join(rep["inputs"]))
+        lines.append("No DLLs found in: " + ", ".join(rep["inputs"]) if rep["inputs"] else "No DLLs to check.")
     for v in ORDER:
         for r in (r for r in rep["plugins"] if r["verdict"] == v):
             lines.append(f"{v:<22} {r['file']}")

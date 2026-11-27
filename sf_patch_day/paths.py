@@ -85,8 +85,9 @@ def find_game(given=None, env=None):
 
 
 def is_game_pass(game):
-    """Game Pass installs keep the game under XboxGames and carry an appxmanifest.xml."""
-    return "xboxgames" in os.path.normcase(game) or os.path.isfile(os.path.join(game, "appxmanifest.xml"))
+    """Game Pass installs carry an appxmanifest.xml. (The folder name alone says nothing: a Steam library can sit
+    inside a folder called XboxGames.)"""
+    return os.path.isfile(os.path.join(game, "appxmanifest.xml"))
 
 
 def data_folder(game):
