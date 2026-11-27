@@ -15,8 +15,9 @@ sf-patch-day runs on your own computer, offline. It collects no data and sends n
 
 - the DLLs, zips, folders, mods files and baselines you name on the command line, and a PDB file with the same name
   next to a DLL (in the same folder or the same zip folder), when there is one;
-- the game folder: `Starfield.exe`'s and SFSE's version data, the `Data\SFSE\Plugins` folder, and the master
-  plugins and archives your mods file names;
+- the game folder: `Starfield.exe`'s and SFSE's version data, the folder names in the game folder, `Data` and
+  `Data\SFSE` (to find the plugins folder in any spelling), the `Data\SFSE\Plugins` folder, the master plugins and
+  archives your mods file names, and, for `fingerprint`, the masters of the plugin you name;
 - to find the game when you don't give `--game` or `--data`: Steam's location from the Windows registry
   (`SteamPath`, `InstallPath`), Steam's `libraryfolders.vdf`, and whether `<drive>:\XboxGames\Starfield\Content`
   exists on each drive.
