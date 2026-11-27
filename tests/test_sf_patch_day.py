@@ -409,10 +409,10 @@ class TestRisk(Temp):
         imports = [(K32, ["VirtualProtect", "GetProcAddress"], False), ("WS2_32.dll", [115, 116, 9999], False),
                    ("winhttp.dll", ["WinHttpOpen"], True)]
         want = ([("kernel32.dll", ["VirtualProtect", "GetProcAddress"], False),
-                 ("ws2_32.dll", ["#115", "#116", "#9999"], False), ("winhttp.dll", ["WinHttpOpen"], True)], 0)
+                 ("ws2_32.dll", ["#115", "#116", "#9999"], False), ("winhttp.dll", ["WinHttpOpen"], True)], 0, None)
         self.assertEqual(pe.PE(mk.pe_file(imports=imports)).imports(), want)
         self.assertEqual(pe.PE(mk.pe_file(imports=imports, bits=32)).imports(), want)  # PE32 too
-        self.assertEqual(pe.PE(mk.pe_file()).imports(), ([], 0))
+        self.assertEqual(pe.PE(mk.pe_file()).imports(), ([], 0, None))
 
     def test_pe_imports_limits(self):
         # Bug hunt 0.5.0: the function-entry limit is for the whole file, so many imported DLLs (or descriptors
@@ -420,16 +420,48 @@ class TestRisk(Temp):
         from unittest import mock
         data = mk.pe_file(imports=[(f"x{i}.dll", [f"F{j}" for j in range(40)], False) for i in range(10)])
         with mock.patch.object(pe, "MAX_THUNKS", 50):
-            entries, skipped = pe.PE(data).imports()
+            entries, skipped, stopped = pe.PE(data).imports()
         self.assertLessEqual(sum(len(f) for _d, f, _x in entries), 50)
-        self.assertEqual(skipped, 1)
+        self.assertEqual(skipped, 0)
+        self.assertEqual(stopped, "reading stopped at the limit of 50 function entries; the rest isn't read")
         self.assertEqual(len(entries), 2)  # reading stops once the limit is used up
-        # More sections than Windows loads: the imports aren't read (each lookup walks every section).
+        # More sections than this tool reads: the imports aren't read (each lookup walks every section), and the
+        # line says so instead of "none of the four kinds in its imports" (code-review round 1, 0.5.0).
         many = bytearray(mk.pe_file(imports=[(K32, ["CreateProcessW"], False)], extra=bytes(8192)))
         struct.pack_into("<H", many, 0x46, pe.MAX_SECTIONS + 1)
-        self.assertEqual(pe.PE(bytes(many)).imports(), ([], 1))
+        self.assertEqual(pe.PE(bytes(many)).imports(),
+                         ([], 0, "the file has 97 sections, more than the 96 this tool reads, so no imports were read"))
+        r = self.judge("Many.dll", bytes(many))
+        self.assertEqual(risk.text_line(r["risk"], r["imports"]["problem"]),
+                         "    risk evidence (not a verdict): none of the four kinds in the imports read (import table "
+                         "not fully read: the file has 97 sections, more than the 96 this tool reads, so no imports "
+                         "were read)")
         many[0x46:0x48] = struct.pack("<H", pe.MAX_SECTIONS)
         self.assertEqual(pe.PE(bytes(many)).imports()[0], [("kernel32.dll", ["CreateProcessW"], False)])
+
+    def test_limit_used_up_before_delay_table(self):
+        # Code-review round 1, 0.5.0: regular imports that use up the entry limit exactly can't hide the
+        # delay-loaded ones without a note.
+        from unittest import mock
+        data = mk.pe_file(imports=[(K32, ["F1", "F2", "F3"], False), ("ws2_32.dll", ["connect"], True)])
+        with mock.patch.object(pe, "MAX_THUNKS", 4):  # three names and the end mark
+            entries, skipped, stopped = pe.PE(data).imports()
+            r = self.judge("Hide.dll", data)
+        self.assertEqual(entries, [("kernel32.dll", ["F1", "F2", "F3"], False)])
+        self.assertEqual(stopped, "reading stopped at the limit of 4 function entries; the rest isn't read")
+        self.assertIn("(import table not fully read: reading stopped at the limit of 4 function entries",
+                      risk.text_line(r["risk"], r["imports"]["problem"]))
+        self.assertEqual(risk.summary_line({k: 0 for k in risk.KINDS}, 2, 1),
+                         "Risk evidence: network 0, process launch 0, runtime DLL loading 0, code patching 0 "
+                         "(of 2 DLLs read; 1 with the import table not fully read)")
+
+    def test_delay_descriptor_without_name_table(self):
+        # Code-review round 1, 0.5.0: a delay-load descriptor with no name table is skipped; its IAT holds stub
+        # code addresses, not names.
+        data = bytearray(mk.pe_file(imports=[("ws2_32.dll", ["connect"], True)]))
+        p = pe.PE(bytes(data))
+        struct.pack_into("<I", data, p.off(p.dirs[13][0]) + 16, 0)  # the name table's RVA
+        self.assertEqual(pe.PE(bytes(data)).imports(), ([], 1, None))
 
     def test_each_kind_text_and_json(self):
         r = self.judge("All.dll", mk.sfse_plugin(compatible=[V300], imports=[
@@ -493,7 +525,7 @@ class TestRisk(Temp):
         self.assertEqual(r["imports"]["dlls"], ["kernel32.dll"])  # the next entry is still read
         self.assertEqual(risk.text_line(r["risk"], r["imports"]["problem"]),
                          "    risk evidence (not a verdict): process launch (CreateProcessW) "
-                         "(import table partly unreadable: 1 entry skipped)")
+                         "(import table not fully read: 1 entry skipped)")
 
     def test_only_our_own_strings(self):
         evil = "evil\x1b[2J\nRESULT: fake"

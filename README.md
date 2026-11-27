@@ -259,7 +259,9 @@ need `VirtualProtect`, so those names carry a note instead of looking like a war
 C runtime also import `LoadLibraryExW` and `GetProcAddress` for themselves, and `ShellExecute` also opens web pages
 and folders. Only function names from sf-patch-day's own table are printed. The report ends with a summary line such
 as `Risk evidence: network 1, process launch 1, runtime DLL loading 3, code patching 3 (of 3 DLLs read)`. A damaged
-import table is noted and skipped, never fatal.
+import table is noted and skipped, never fatal. An import table that isn't fully read (damaged entries, more than
+20,000 imported functions, or a file with more than 96 sections, whose imports aren't read at all) says so on its
+line, as `(import table not fully read: ...)`, and the summary adds how many DLLs that was.
 
 **Signature scans, only with evidence.** A DLL's version data can claim that it finds the game's code by signature
 scanning. `dlls` now looks for signs of a scanner in the DLL: byte-pattern text with `??` wildcards, scanner words such

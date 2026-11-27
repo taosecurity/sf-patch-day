@@ -14,7 +14,7 @@ import struct
 MAX_IMPORT_DLLS = 4096  # import descriptors read per directory
 MAX_THUNKS = 20000      # function entries read per file, all imported DLLs together (real plugins: under 1,000)
 MAX_IMPORT_NAME = 256   # bytes in a DLL or function name
-MAX_SECTIONS = 96       # Windows won't load a program file with more sections; its imports aren't read
+MAX_SECTIONS = 96       # a file with more sections (real plugins have under 10) gets no import reading, and says so
 
 
 class PEError(Exception):
@@ -131,15 +131,19 @@ class PE:
     def _thunks(self, rva, base=0):
         """([function names, or '#n' for imports by ordinal], entries skipped) for one DLL's name table at rva.
         base is subtracted from the name addresses (the old delay-load form stores addresses, not RVAs). Each entry
-        read uses one of self._left, the file's MAX_THUNKS (several DLLs can share one table)."""
+        read uses one of self._left, the file's MAX_THUNKS (several DLLs can share one table); when none is left,
+        reading stops and self._stopped is set."""
         size = 8 if self.is64 else 4
         fmt, by_ordinal = ("<Q", 1 << 63) if self.is64 else ("<I", 1 << 31)
         names, skipped, i = [], 0, 0
         while True:
-            o = self.off(rva + i * size) if self._left > 0 else None
+            if self._left <= 0:
+                self._stopped = True
+                return names, skipped
+            o = self.off(rva + i * size)
             self._left, i = self._left - 1, i + 1
             if o is None or o + size > len(self.data):
-                return names, skipped + 1  # too many, or the table runs out of the file before its end mark
+                return names, skipped + 1  # the table runs out of the file before its end mark
             t = struct.unpack_from(fmt, self.data, o)[0]
             if not t:
                 return names, skipped
@@ -153,17 +157,22 @@ class PE:
                 names.append(name.decode("latin-1"))
 
     def imports(self):
-        """([(DLL name lowercased, [function names or '#n' ordinals], delay-loaded)], entries skipped) from the
-        import directory and the delay-load directory. A damaged entry is skipped and counted, never fatal. Limits:
-        MAX_IMPORT_DLLS descriptors per directory, MAX_THUNKS function entries per file (reading stops there),
-        names up to MAX_IMPORT_NAME bytes; a file with more than MAX_SECTIONS sections gives ([], 1)."""
+        """([(DLL name lowercased, [function names or '#n' ordinals], delay-loaded)], entries skipped, stopped) from
+        the import directory and the delay-load directory. A damaged entry is skipped and counted, never fatal.
+        stopped is None, or why reading stopped before the end (said in the report, so a file can't hide imports
+        behind a limit). Limits: MAX_IMPORT_DLLS descriptors per directory, MAX_THUNKS function entries per file,
+        names up to MAX_IMPORT_NAME bytes; a file with more than MAX_SECTIONS sections isn't read at all."""
         out, skipped, d = [], 0, self.data
         if len(self.sections) > MAX_SECTIONS:
-            return out, 1
-        self._left = MAX_THUNKS
+            return out, 0, (f"the file has {len(self.sections)} sections, more than the {MAX_SECTIONS} this tool "
+                            f"reads, so no imports were read")
+        self._left, self._stopped = MAX_THUNKS, False
         for index, delayed in ((1, False), (13, True)):
-            if len(self.dirs) <= index or not self.dirs[index][0] or self._left <= 0:
+            if len(self.dirs) <= index or not self.dirs[index][0]:
                 continue
+            if self._left <= 0:
+                self._stopped = True
+                break
             rva, step = self.dirs[index][0], (32 if delayed else 20)
             try:
                 for i in range(MAX_IMPORT_DLLS + 1):
@@ -172,11 +181,11 @@ class PE:
                         skipped += 1
                         break
                     if delayed:
-                        attrs, name_rva, _handle, iat, int_rva = struct.unpack_from("<5I", d, o)
+                        attrs, name_rva, _handle, _iat, int_rva = struct.unpack_from("<5I", d, o)
                         if not any(struct.unpack_from("<8I", d, o)):
                             break
                         base = 0 if attrs & 1 else self.image_base  # bit 0 clear: the old form with addresses
-                        table = int_rva or iat
+                        table = int_rva  # the delay IAT holds stub code addresses, not names
                     else:
                         oft, _stamp, _chain, name_rva, ft = struct.unpack_from("<5I", d, o)
                         if not (oft or name_rva or ft):
@@ -189,11 +198,14 @@ class PE:
                     funcs, bad = self._thunks(table - base, base)
                     skipped += bad
                     out.append((name.decode("latin-1").lower(), funcs, delayed))
-                    if self._left < 0:
+                    if self._stopped:
                         break  # the file's entry limit is used up: the rest isn't read
             except (struct.error, IndexError, ValueError):
                 skipped += 1
-        return out, skipped
+            if self._stopped:
+                break
+        return out, skipped, (f"reading stopped at the limit of {MAX_THUNKS:,} function entries; the rest isn't "
+                              f"read" if self._stopped else None)
 
     def file_version(self):
         """(major, minor, build, revision) from the version resource, or None. Looks for the VS_FIXEDFILEINFO

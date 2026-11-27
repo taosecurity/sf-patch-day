@@ -83,12 +83,14 @@ def _plural(n, one, many):
     return f"{n} {one if n == 1 else many}"
 
 
-def imports_summary(entries, skipped):
-    """The JSON 'imports' part: DLL names (cleaned), function count, delay-loaded DLLs and the problem, if any."""
+def imports_summary(entries, skipped, stopped=None):
+    """The JSON 'imports' part: DLL names (cleaned), function count, delay-loaded DLLs and the problem, if any
+    (damaged entries skipped, and why reading stopped early: pe.PE.imports' third value)."""
     names = list(dict.fromkeys(clean(dll) for dll, _f, _d in entries))
     delayed = list(dict.fromkeys(clean(dll) for dll, _f, d in entries if d))
+    problem = ([_plural(skipped, "entry", "entries") + " skipped"] if skipped else []) + ([stopped] if stopped else [])
     return {"dlls": names, "count": sum(len(f) for _d, f, _x in entries), "delayed": delayed,
-            "problem": _plural(skipped, "entry", "entries") + " skipped" if skipped else None}
+            "problem": "; ".join(problem) or None}
 
 
 def assess(entries, data=b""):
@@ -182,21 +184,25 @@ def text_line(risk, problem=None):
         else:
             inner = _cut(_names(r["imports"]))
         parts.append(f"{LABELS[k]} ({inner})" + (f" [{r['note']}]" if r["note"] else ""))
-    line = "    risk evidence (not a verdict): " + ("; ".join(parts) or "none of the four kinds in its imports")
+    none = "none of the four kinds in the imports read" if problem else "none of the four kinds in its imports"
+    line = "    risk evidence (not a verdict): " + ("; ".join(parts) or none)
     if problem:
-        line += f" (import table partly unreadable: {problem})"
+        line += f" (import table not fully read: {problem})"
     return line
 
 
-def summary_line(counts, read):
+def summary_line(counts, read, not_full=0):
+    """The 'Risk evidence:' summary; not_full = DLLs whose import table wasn't fully read."""
     return ("Risk evidence: " + ", ".join(f"{LABELS[k]} {counts[k]}" for k in KINDS) +
-            f" (of {_plural(read, 'DLL', 'DLLs')} read)")
+            f" (of {_plural(read, 'DLL', 'DLLs')} read" +
+            (f"; {not_full} with the import table not fully read" if not_full else "") + ")")
 
 
 def read(data, label):
     """(imports summary, risk) for one readable DLL's bytes. Raises pe.PEError when it isn't a program file."""
-    entries, skipped = pe.PE(data, label).imports()
-    summary, risk = imports_summary(entries, skipped), assess(entries, data)
+    entries, skipped, stopped = pe.PE(data, label).imports()
+    summary, risk = imports_summary(entries, skipped, stopped), assess(entries, data)
     log.info("risk", f"{label}: {len(entries)} import DLL entries, {summary['count']} functions, "
-                     f"{skipped} skipped; kinds: {', '.join(found_kinds(risk)) or 'none'}")
+                     f"{skipped} skipped{'; ' + stopped if stopped else ''}; "
+                     f"kinds: {', '.join(found_kinds(risk)) or 'none'}")
     return summary, risk

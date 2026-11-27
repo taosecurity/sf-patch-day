@@ -426,7 +426,8 @@ def text_report(rep, how_version):
     if any(fw.values()):
         lines.append("Frameworks: " + ", ".join(f"{k} {fw[k]}" for k in framework.KINDS))
     if rep["risk_dlls_read"]:
-        lines.append(risk.summary_line(rep["risk_counts"], rep["risk_dlls_read"]))
+        lines.append(risk.summary_line(rep["risk_counts"], rep["risk_dlls_read"],
+                                       sum(1 for r in rep["plugins"] if r.get("imports", {}).get("problem"))))
     c = rep["counts"]
     summary = ", ".join(f"{v.lower()}: {c[v]}" for v in ORDER if c.get(v)) or "no DLLs"
     word = {0: "everything checked loads", 1: "some plugins wait for an update or need testing",
