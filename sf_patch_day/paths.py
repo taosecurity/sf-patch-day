@@ -95,7 +95,28 @@ def data_folder(game):
 
 
 def sfse_plugins_folder(game):
-    return os.path.join(game, "Data", "SFSE", "Plugins")
+    """<game>\\Data\\SFSE\\Plugins. The game ignores case in folder names (on Linux too, through Proton), so when
+    that exact spelling isn't there, a folder whose name differs only in case (Data/sfse/plugins) is used. When
+    there's no such folder at all, the usual spelling is given back."""
+    usual = os.path.join(game, "Data", "SFSE", "Plugins")
+    if os.path.isdir(usual):
+        return usual
+    folder = game
+    for part in ("Data", "SFSE", "Plugins"):
+        exact = os.path.join(folder, part)
+        if os.path.isdir(exact):
+            folder = exact
+            continue
+        try:  # sorted, so the same folder is picked on every run when several differ only in case
+            names = sorted(n for n in os.listdir(folder)
+                           if n.lower() == part.lower() and os.path.isdir(os.path.join(folder, n)))
+        except OSError:
+            names = []
+        if not names:
+            return usual
+        folder = os.path.join(folder, names[0])
+    log.info("dlls", f"SFSE plugins folder: using {folder} (the name differs only in case)")
+    return folder
 
 
 # ---- the Creations catalog (creations command) ----------------------------------------------------------------

@@ -319,6 +319,40 @@ class TestDllsCommand(Temp):
         self.assertEqual(run("dlls", self.p("missing.dll"), "--game-version", "1.16.300")[0], 3)
         self.assertEqual(run("dlls", "--no-such-option")[0], 3)
 
+    def test_plugins_folder_spelled_in_other_case(self):
+        """On a case-sensitive system (Linux, Proton) a Data/sfse/plugins folder is still the plugins folder: its
+        DLLs are checked, not reported as "no SFSE plugins are installed". Runs as on Linux on any system: a folder
+        exists only under the exact spelling stored on disk."""
+        from unittest import mock
+        game = self.make_game()
+        data = os.path.join(game, "Data")
+        os.rename(os.path.join(data, "SFSE"), os.path.join(data, "sfse_tmp"))  # two steps: Windows ignores case
+        os.rename(os.path.join(data, "sfse_tmp"), os.path.join(data, "sfse"))
+        os.rename(os.path.join(data, "sfse", "Plugins"), os.path.join(data, "sfse", "plugins_tmp"))
+        os.rename(os.path.join(data, "sfse", "plugins_tmp"), os.path.join(data, "sfse", "plugins"))
+        root = os.path.abspath(game)
+        real_isdir, real_listdir = os.path.isdir, os.listdir
+
+        def isdir(p):
+            p = os.path.abspath(p)
+            if not os.path.normcase(p).startswith(os.path.normcase(root)):
+                return real_isdir(p)
+            cur = root
+            for part in os.path.relpath(p, root).split(os.sep):
+                if part in ("", "."):
+                    continue
+                if part not in real_listdir(cur):
+                    return False
+                cur = os.path.join(cur, part)
+            return real_isdir(cur)
+        with mock.patch.object(os.path, "isdir", isdir):
+            self.assertFalse(os.path.isdir(os.path.join(data, "SFSE", "Plugins")))  # the emulation works
+            code, out = run("dlls", "--game", game)
+        self.assertNotIn("no SFSE plugins are installed", out)
+        self.assertIn("Listed.dll", out)
+        self.assertIn("Broken.dll", out)
+        self.assertEqual(code, 3, out)  # Broken.dll can't be read, as with the usual spelling
+
 
 # ---- which framework a plugin was built with ----------------------------------------------------------------------
 class TestFramework(Temp):
