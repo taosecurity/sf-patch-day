@@ -305,7 +305,7 @@ With `--json`, each readable DLL also gets `imports` (`dlls`, `count`, `delayed`
 found); a "can't tell" plugin also gets `framework_hints`. The report gets `risk_counts` (the four counts) and
 `risk_dlls_read`.
 
-The text report never shows a control character from a DLL: in any text taken from a DLL, a zip member name or a file name, an escape code, a newline or an invisible direction mark is shown as `\xNN` (or `\uNNNN`), so a hostile DLL can't rewrite your terminal or fake a report line. Ordinary text prints as it is.
+The text report never shows a control character from a DLL: in any text taken from a DLL, a zip member name or a file name, an escape code, a newline or an invisible direction mark is shown as `\xNN` (or `\uNNNN`), so a hostile DLL can't rewrite your terminal or fake a report line. The troubleshooting log (`--verbose`, `--log`) escapes its lines the same way. Ordinary text prints as it is.
 
 ## drift: does my mod need a rebuild
 

@@ -567,6 +567,15 @@ class TestRisk(Temp):
         self.assertEqual(len([ln for ln in out.splitlines() if ln.startswith("RESULT:")]), 1, out)
         self.assertEqual(dlls.show("a\x1b\n\x7f\x85\u2028\u202eb"), "a\\x1b\\x0a\\x7f\\x85\\u2028\\u202eb")
         self.assertEqual(dlls.show("plain text, \xe9 and 'quotes' stay"), "plain text, \xe9 and 'quotes' stay")
+        self.assertEqual(dlls.show("a\U000e0001x"), "a\\U000e0001x")
+        # the troubleshooting log (--verbose, --log) escapes the same way: a zip member name can't fake a log line
+        logf = self.p("run.log")
+        run("dlls", "--game-version", "1.16.300", folder, "--log", logf)
+        with open(logf, encoding="utf-8") as f:
+            logged = f.read()
+        self.assertIn("bad\\x1b[2Jname\\x0a.dll", logged)
+        self.assertNotIn("\x1b", logged)
+        self.assertFalse([ln for ln in logged.splitlines() if not re.match(r"\d\d:\d\d:\d\d \[", ln)], logged)
 
     def test_report_text_json_summary_and_log(self):
         folder = self.p("Plugins")

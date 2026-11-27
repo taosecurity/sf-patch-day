@@ -11,7 +11,6 @@ import mmap
 import os
 import re
 import struct
-import unicodedata
 import zipfile
 import zlib
 
@@ -383,19 +382,7 @@ def run(inputs, target, game, game_pass=False, al_dirs=()):
 ORDER = [LOCKED, NEEDS_SFSE, NEEDS_AL, MAY_FAIL, UNREADABLE, WORKS, NOT_SFSE]
 
 
-def show(text):
-    """A line of the text report with every control character shown as \\xNN (or \\uNNNN): the C0 and C1 controls
-    (an ESC sequence could rewrite the terminal, a newline could fake a report line), and the invisible format and
-    line-separator characters (a right-to-left override could reorder the line). Text from a DLL's version block, a
-    zip member name or a file name can hold them."""
-    out = []
-    for c in str(text):
-        n = ord(c)
-        if unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp"):
-            out.append(f"\\x{n:02x}" if n < 0x100 else f"\\u{n:04x}")
-        else:
-            out.append(c)
-    return "".join(out)
+show = log.show  # the escape for every line of the text report (the troubleshooting log uses it too)
 
 
 def text_report(rep, how_version):
