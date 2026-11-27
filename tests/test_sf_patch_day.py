@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
 import makers as mk  # noqa: E402
-from sf_patch_day import cli, creations, dlls, drift, paths, pe, pextools, scripts  # noqa: E402
+from sf_patch_day import cli, creations, dlls, drift, log, paths, pe, pextools, scripts  # noqa: E402
 try:
     from sf_patch_day import risk  # noqa: E402  (0.5.0)
 except ImportError:  # lets the 0.4.0 code run these tests and show them failing
@@ -576,6 +576,19 @@ class TestRisk(Temp):
         self.assertIn("bad\\x1b[2Jname\\x0a.dll", logged)
         self.assertNotIn("\x1b", logged)
         self.assertFalse([ln for ln in logged.splitlines() if not re.match(r"\d\d:\d\d:\d\d \[", ln)], logged)
+        # a lone surrogate (an undecodable file name) is escaped, so a strict UTF-8 log write can't fail on it
+        self.assertEqual(dlls.show("a\udc9bb"), "a\\udc9bb")
+        # our own multi-line text (a traceback) keeps one log line per line, each with the time and section
+        log.setup(log_file=logf)
+        try:
+            log.info("error", "Traceback:\n  File \"x\x1b.py\"\nValueError: bad\n", lines=True)
+            log.info("dlls", "one\nline")
+        finally:
+            log.close()
+        with open(logf, encoding="utf-8") as f:
+            got = f.read().splitlines()
+        self.assertEqual([ln[9:] for ln in got], ['[error] Traceback:', '[error]   File "x\\x1b.py"',
+                                                  '[error] ValueError: bad', '[dlls] one\\x0aline'])
 
     def test_report_text_json_summary_and_log(self):
         folder = self.p("Plugins")

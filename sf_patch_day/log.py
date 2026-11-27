@@ -27,24 +27,29 @@ def setup(verbose=False, log_file=None):
 def show(text):
     """Text with every control character shown as \\xNN (or \\uNNNN, \\UNNNNNNNN): the C0 and C1 controls (an ESC
     sequence could rewrite the terminal, a newline could fake a line), and the invisible format and line-separator
-    characters (a right-to-left override could reorder the line). Text from a DLL's version block, a zip member name
-    or a file name can hold them. The dlls text report and every log line go through it."""
+    characters (a right-to-left override could reorder the line), and a lone surrogate (a file name Windows or
+    Linux gives back undecoded; a strict UTF-8 write would fail on it). Text from a DLL's version block, a zip member
+    name or a file name can hold them. The dlls text report and every log line go through it."""
     out = []
     for c in str(text):
         n = ord(c)
-        if unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp"):
+        if unicodedata.category(c) in ("Cc", "Cf", "Cs", "Zl", "Zp"):
             out.append(f"\\x{n:02x}" if n < 0x100 else f"\\u{n:04x}" if n < 0x10000 else f"\\U{n:08x}")
         else:
             out.append(c)
     return "".join(out)
 
 
-def info(section, msg):
+def info(section, msg, lines=False):
+    """One log line, escaped. lines=True is for our own multi-line text (a traceback, a list of problems): each of
+    its lines becomes a log line of its own, with the same time and section, and is escaped the same way."""
     if not _sinks:
         return
-    line = f"{datetime.datetime.now().strftime('%H:%M:%S')} [{section}] {show(msg)}\n"
+    head = f"{datetime.datetime.now().strftime('%H:%M:%S')} [{section}] "
+    parts = str(msg).rstrip("\n").split("\n") if lines else [msg]
+    text = "".join(f"{head}{show(p)}\n" for p in parts)
     for s in _sinks:
-        s.write(line)
+        s.write(text)
         s.flush()
 
 
