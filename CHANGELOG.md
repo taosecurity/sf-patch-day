@@ -6,7 +6,7 @@
 
 A DLL with a huge number of sections (a made-up one with 65,535 sections and 65,536 export names took minutes) no longer stalls `dlls`. The export readers now refuse a file with more than 96 sections, as the import reader already did, and the DLL is listed as unreadable with that reason.
 
-`dlls` with no paths no longer ends with `RESULT: some files couldn't be read` and exit 3 when the game has no `Data\SFSE\Plugins` folder, which is always the case on Game Pass. It says that no SFSE plugins are installed and exits 0 (on Game Pass, 2 only when an SFSE plugin was checked). A path you give that doesn't exist still gives exit 3. The README exit-code table says so. On Linux and Proton, where folder names are case-sensitive but the game's aren't, a plugins folder spelled in other case (`Data/sfse/plugins`) is found and checked, as the game would load it.
+`dlls` with no paths no longer ends with `RESULT: some files couldn't be read` and exit 3 when the game has no `Data\SFSE\Plugins` folder, which is always the case on Game Pass. It says that no SFSE plugins are installed and exits 0. Two cases still give another code, as the README exit-code table says: on Steam, a missing SFSE for this game version gives 1, and on Game Pass, a checked SFSE plugin gives 2. A path you give that doesn't exist still gives exit 3. The README exit-code table says so. On Linux and Proton, where folder names are case-sensitive but the game's aren't, a plugins folder spelled in other case (`Data/sfse/plugins`) is found and checked, as the game would load it.
 
 Smaller fixes: `fingerprint <path>` now also searches the game's Data folder for the masters of a plugin outside Data, so a light or medium master isn't counted as full, and prints a `WARNING` line when a master isn't found. `drift check` reads the baseline before it scans the masters, so a mistyped `--baseline` is reported at once, and a hand-damaged master entry in a baseline is a `CANNOT CHECK` that names the file instead of an unexpected error. A game folder is Game Pass only when it holds `appxmanifest.xml`, so a Steam library inside a folder named XboxGames is no longer treated as Game Pass.
 
@@ -19,6 +19,7 @@ This run checks a made-up Game Pass install that has no SFSE plugins folder (0.5
     No SFSE plugins folder (D:\Games\Starfield\Data\SFSE\Plugins): no SFSE plugins are installed.
     Game version: 1.16.244 (given with --game-version)
     SFSE: this is a Game Pass install, and SFSE doesn't support Game Pass, so SFSE plugins don't load here and no SFSE update will change that
+    Address Library: versionlib-1-16-244-0.bin NOT FOUND in the folders checked (plugins that use it wait for its update)
 
     No DLLs to check.
 
